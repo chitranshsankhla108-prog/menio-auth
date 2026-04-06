@@ -1,0 +1,192 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
+
+@layer base {
+  :root {
+    /* Premium Boutique - Espresso & Cream Palette */
+    /* Background: Off-white cream */
+    --background: 39 76% 96%;
+    --foreground: 17 63% 9%;
+
+    /* Card: Slightly warmer cream */
+    --card: 39 60% 94%;
+    --card-foreground: 17 63% 9%;
+
+    --popover: 39 76% 96%;
+    --popover-foreground: 17 63% 9%;
+
+    /* Primary: Deep Espresso Brown #2D1B14 */
+    --primary: 17 53% 13%;
+    --primary-foreground: 39 76% 96%;
+
+    /* Secondary: Warm Cream #FDF5E6 */
+    --secondary: 39 76% 95%;
+    --secondary-foreground: 17 63% 9%;
+
+    /* Muted: Soft latte */
+    --muted: 30 30% 90%;
+    --muted-foreground: 17 25% 40%;
+
+    /* Accent: Rich terracotta/burnt sienna */
+    --accent: 18 60% 48%;
+    --accent-foreground: 39 76% 96%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 30 25% 85%;
+    --input: 30 25% 85%;
+    --ring: 18 60% 48%;
+
+    /* 16px rounded corners */
+    --radius: 1rem;
+
+    /* Custom Cafe Colors - Premium Boutique */
+    --cafe-cream: 39 76% 96%;
+    --cafe-espresso: 17 53% 13%;
+    --cafe-latte: 30 40% 88%;
+    --cafe-terracotta: 18 60% 48%;
+    --cafe-gold: 38 75% 52%;
+    --cafe-warm-gray: 30 12% 55%;
+
+    /* Gradients */
+    --gradient-hero: linear-gradient(135deg, hsl(17 53% 13%) 0%, hsl(17 45% 20%) 100%);
+    --gradient-card: linear-gradient(180deg, hsl(39 60% 96%) 0%, hsl(39 50% 92%) 100%);
+    --gradient-accent: linear-gradient(135deg, hsl(18 60% 48%) 0%, hsl(25 65% 42%) 100%);
+
+    /* Shadows - Deeper for premium feel */
+    --shadow-soft: 0 4px 24px -4px hsl(17 53% 13% / 0.1);
+    --shadow-card: 0 2px 16px -4px hsl(17 53% 13% / 0.12);
+    --shadow-elevated: 0 12px 40px -8px hsl(17 53% 13% / 0.2);
+
+    --sidebar-background: 39 60% 94%;
+    --sidebar-foreground: 17 63% 9%;
+    --sidebar-primary: 17 53% 13%;
+    --sidebar-primary-foreground: 39 76% 96%;
+    --sidebar-accent: 30 40% 90%;
+    --sidebar-accent-foreground: 17 63% 9%;
+    --sidebar-border: 30 25% 82%;
+    --sidebar-ring: 18 60% 48%;
+  }
+
+  .dark {
+    --background: 20 30% 8%;
+    --foreground: 30 30% 92%;
+
+    --card: 20 25% 12%;
+    --card-foreground: 30 30% 92%;
+
+    --popover: 20 25% 10%;
+    --popover-foreground: 30 30% 92%;
+
+    --primary: 30 40% 85%;
+    --primary-foreground: 20 30% 10%;
+
+    --secondary: 20 20% 18%;
+    --secondary-foreground: 30 30% 92%;
+
+    --muted: 20 15% 20%;
+    --muted-foreground: 30 15% 60%;
+
+    --accent: 18 50% 50%;
+    --accent-foreground: 30 50% 97%;
+
+    --destructive: 0 62% 45%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 20 15% 20%;
+    --input: 20 15% 20%;
+    --ring: 18 50% 50%;
+
+    --sidebar-background: 20 25% 10%;
+    --sidebar-foreground: 30 30% 92%;
+    --sidebar-primary: 30 40% 85%;
+    --sidebar-primary-foreground: 20 30% 10%;
+    --sidebar-accent: 20 20% 16%;
+    --sidebar-accent-foreground: 30 30% 92%;
+    --sidebar-border: 20 15% 18%;
+    --sidebar-ring: 18 50% 50%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Inter', sans-serif;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Playfair Display', serif;
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: 'Playfair Display', serif;
+  }
+
+  .font-sans {
+    font-family: 'Inter', sans-serif;
+  }
+
+  .bg-gradient-hero {
+    background: var(--gradient-hero);
+  }
+
+  .bg-gradient-card {
+    background: var(--gradient-card);
+  }
+
+  .bg-gradient-accent {
+    background: var(--gradient-accent);
+  }
+
+  .shadow-soft {
+    box-shadow: var(--shadow-soft);
+  }
+
+  .shadow-card {
+    box-shadow: var(--shadow-card);
+  }
+
+  .shadow-elevated {
+    box-shadow: var(--shadow-elevated);
+  }
+
+  .text-cafe-espresso {
+    color: hsl(var(--cafe-espresso));
+  }
+
+  .bg-cafe-cream {
+    background-color: hsl(var(--cafe-cream));
+  }
+
+  .bg-cafe-latte {
+    background-color: hsl(var(--cafe-latte));
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(var(--muted));
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.3);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.5);
+}
