@@ -1,6 +1,7 @@
 import { Outlet, useNavigate } from 'react-router-dom';
 import { StaffNavigation } from './StaffNavigation';
 import { useAuth } from '@/hooks/useAuth';
+import { useOrderNotifications } from '@/hooks/useOrderNotifications'; // <-- NEW IMPORT
 import { Button } from '@/components/ui/button';
 import { LogOut, User, ShieldCheck } from 'lucide-react';
 import {
@@ -15,13 +16,16 @@ export function StaffLayout() {
   const navigate = useNavigate();
   const { user, signOut, isAdmin } = useAuth();
 
+  // <-- GLOBAL NOTIFICATIONS TRIGGER -->
+  // This stays alive no matter what tab you are on!
+  useOrderNotifications(); 
+
   const handleSignOut = async () => {
     const { error } = await signOut();
     if (error) {
       toast.error('Failed to sign out');
     } else {
       toast.success('Signed out securely');
-      // Changed from /menu to /auth since this is the POS app
       navigate('/auth'); 
     }
   };
@@ -31,7 +35,6 @@ export function StaffLayout() {
       
       {/* COCOA STAFF HEADER */}
       <header className="sticky top-0 z-40 bg-[#3A2C2C] text-[#F4EDE4] shadow-[0_15px_40px_rgba(58,44,44,0.15)]">
-        {/* CHANGED: Removed max-w-lg, added max-w-[1600px] to match the Command Center */}
         <div className="flex items-center justify-between h-16 px-6 max-w-[1600px] mx-auto">
           
           {/* Brand & Badge */}
@@ -77,13 +80,11 @@ export function StaffLayout() {
       </header>
       
       {/* MAIN CONTENT OUTLET */}
-      {/* CHANGED: Removed max-w-lg and p-4 so the child components can dictate their own width */}
       <main className="w-full">
         <Outlet />
       </main>
       
       {/* BOTTOM NAVIGATION ROUTER */}
-      {/* Notice: This stays at the bottom for now. It will naturally stretch on PC. */}
       <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-[#EBE1E3] bg-white md:bg-transparent md:border-none">
         <div className="max-w-[1600px] mx-auto">
            <StaffNavigation />
