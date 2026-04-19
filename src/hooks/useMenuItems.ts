@@ -10,7 +10,7 @@ export type MenuCategory = string;
 const menuItemSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(100, "Name must be less than 100 characters"),
   price: z.number().positive("Price must be greater than 0"),
-  category: z.enum(["Drinks", "Snacks", "Meals"]),
+  category: z.string().min(1, "Category is required"),
   description: z.string().trim().max(500, "Description must be less than 500 characters").optional().nullable(),
   is_available: z.boolean().optional(),
   // Changed: Relaxed URL validation to allow for internal Supabase paths before they become public URLs
