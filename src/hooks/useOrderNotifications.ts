@@ -2,44 +2,49 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 
-// Exported so you can import and use it in StaffSettings.tsx for the test button
+// 1. GLOBAL AUDIO ENGINE
+// We keep this outside the function so the browser doesn't destroy it or block it.
+let globalAudioContext: AudioContext | null = null;
+
 export function playNotificationSound() {
   try {
-    // 1. Check local storage for the volume, default to 50% (0.5) if it doesn't exist
     const savedVolume = localStorage.getItem('menio_notification_volume');
     const currentVolume = savedVolume !== null ? parseFloat(savedVolume) : 0.5;
 
-    // 2. If muted, don't even create the audio context
     if (currentVolume <= 0) return;
 
-    const audioContext = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
-    
-    // Create oscillator for the ping sound
-    const oscillator = audioContext.createOscillator();
-    const gainNode = audioContext.createGain();
+    // Initialize if it doesn't exist yet
+    if (!globalAudioContext) {
+      globalAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+
+    // Force it to wake up if the browser suspended it
+    if (globalAudioContext.state === 'suspended') {
+      globalAudioContext.resume().catch(err => console.warn("Browser blocked audio playback:", err));
+    }
+
+    const oscillator = globalAudioContext.createOscillator();
+    const gainNode = globalAudioContext.createGain();
     
     oscillator.connect(gainNode);
-    gainNode.connect(audioContext.destination);
+    gainNode.connect(globalAudioContext.destination);
     
     // Pleasant notification tone
-    oscillator.frequency.setValueAtTime(880, audioContext.currentTime); // A5 note
-    oscillator.frequency.setValueAtTime(1046.5, audioContext.currentTime + 0.1); // C6 note
+    oscillator.frequency.setValueAtTime(880, globalAudioContext.currentTime); // A5 note
+    oscillator.frequency.setValueAtTime(1046.5, globalAudioContext.currentTime + 0.1); // C6 note
     
-    // 3. Apply the volume multiplier to the Gain Node.
-    // We multiply by 2 so that a slider at 50% (0.5) plays at your original volume (0.3 peak), 
-    // and 100% (1.0) plays twice as loud.
     const volumeMultiplier = currentVolume * 2;
-    const peak1 = Math.min(0.3 * volumeMultiplier, 1.0); // Cap at 1.0 to prevent audio clipping/distortion
+    const peak1 = Math.min(0.3 * volumeMultiplier, 1.0); 
     const peak2 = Math.min(0.2 * volumeMultiplier, 1.0);
 
     // Envelope for smooth sound
-    gainNode.gain.setValueAtTime(0, audioContext.currentTime);
-    gainNode.gain.linearRampToValueAtTime(peak1, audioContext.currentTime + 0.02);
-    gainNode.gain.linearRampToValueAtTime(peak2, audioContext.currentTime + 0.1);
-    gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.3);
+    gainNode.gain.setValueAtTime(0, globalAudioContext.currentTime);
+    gainNode.gain.linearRampToValueAtTime(peak1, globalAudioContext.currentTime + 0.02);
+    gainNode.gain.linearRampToValueAtTime(peak2, globalAudioContext.currentTime + 0.1);
+    gainNode.gain.linearRampToValueAtTime(0, globalAudioContext.currentTime + 0.3);
     
-    oscillator.start(audioContext.currentTime);
-    oscillator.stop(audioContext.currentTime + 0.3);
+    oscillator.start(globalAudioContext.currentTime);
+    oscillator.stop(globalAudioContext.currentTime + 0.3);
   } catch (error) {
     console.log('Audio notification not supported:', error);
   }
@@ -53,9 +58,48 @@ export function useOrderNotifications() {
     playNotificationSound();
   }, []);
 
+  // 2. THE STEALTH UNLOCKER
+  // This wakes up the audio engine the very first time the user touches the screen
   useEffect(() => {
-    const channel = supabase
-      .channel('order-notifications')
+    const unlockAudio = () => {
+      if (!globalAudioContext) {
+        globalAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      }
+      if (globalAudioContext.state === 'suspended') {
+        globalAudioContext.resume();
+      }
+      // Clean up the listeners once it's unlocked so it doesn't run on every click
+      document.removeEventListener('click', unlockAudio);
+      document.removeEventListener('touchstart', unlockAudio);
+      document.removeEventListener('keydown', unlockAudio);
+    };
+
+    document.addEventListener('click', unlockAudio);
+    document.addEventListener('touchstart', unlockAudio);
+    document.addEventListener('keydown', unlockAudio);
+
+    return () => {
+      document.removeEventListener('click', unlockAudio);
+      document.removeEventListener('touchstart', unlockAudio);
+      document.removeEventListener('keydown', unlockAudio);
+    };
+  }, []);
+
+  // 3. SUPABASE LISTENER (FIXED FOR REACT STRICT MODE)
+  useEffect(() => {
+    const channelName = 'menio-order-sync';
+
+    // FIX: Actively find and destroy any existing ghost channels from Hot Reloads
+    supabase.getChannels().forEach((ch) => {
+      if (ch.topic === `realtime:${channelName}`) {
+        supabase.removeChannel(ch);
+      }
+    });
+
+    // Create a fresh, guaranteed-clean channel
+    const channel = supabase.channel(channelName);
+
+    channel
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'orders' },
@@ -77,7 +121,10 @@ export function useOrderNotifications() {
           queryClient.invalidateQueries({ queryKey: ['todays-revenue'] });
         }
       )
-      .subscribe();
+      .subscribe((status, err) => {
+        // Optional: Helpful for debugging if it ever fails again
+        if (err) console.error("Supabase Subscribe Error:", err);
+      });
 
     // Mark as initialized after a short delay to prevent sound on initial load
     const initTimeout = setTimeout(() => {

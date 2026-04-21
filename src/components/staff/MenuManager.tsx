@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { Plus, Pencil, Trash2, Coffee, Cookie, UtensilsCrossed, Loader2, ImageIcon } from 'lucide-react';
-import { useMenuItems, useDeleteMenuItem, MenuCategory, MenuItem } from '@/hooks/useMenuItems';
+import { useState, useMemo } from 'react';
+import { Plus, Pencil, Trash2, Coffee, Cookie, UtensilsCrossed, Loader2 } from 'lucide-react';
+import { useMenuItems, useDeleteMenuItem, MenuItem } from '@/hooks/useMenuItems';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -9,21 +9,28 @@ import { Switch } from '@/components/ui/switch';
 import { useUpdateMenuItem } from '@/hooks/useMenuItems';
 import { cn } from '@/lib/utils';
 
-const categoryIcons: Record<MenuCategory, React.ElementType> = {
+// The Icon Dictionary (Defaults to Coffee if a string isn't found here)
+const categoryIcons: Record<string, React.ElementType> = {
   Drinks: Coffee,
   Snacks: Cookie,
   Meals: UtensilsCrossed,
 };
 
-const categories: MenuCategory[] = ['Drinks', 'Snacks', 'Meals'];
-
 export function MenuManager() {
   const { data: menuItems = [], isLoading } = useMenuItems();
   const deleteMenuItem = useDeleteMenuItem();
   const updateMenuItem = useUpdateMenuItem();
-  const [selectedCategory, setSelectedCategory] = useState<MenuCategory | 'All'>('All');
+  
+  const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
+
+  // Dynamically pull categories from the database
+  const dynamicCategories = useMemo(() => {
+    const fetchedCategories = menuItems.map(item => item.category);
+    const combined = Array.from(new Set(['Drinks', 'Snacks', 'Meals', ...fetchedCategories]));
+    return combined.filter(Boolean); 
+  }, [menuItems]);
 
   const filteredItems =
     selectedCategory === 'All'
@@ -94,8 +101,9 @@ export function MenuManager() {
         >
           All Items
         </Button>
-        {categories.map((cat) => {
-          const Icon = categoryIcons[cat];
+        
+        {dynamicCategories.map((cat) => {
+          const Icon = categoryIcons[cat] || Coffee; 
           const isActive = selectedCategory === cat;
           return (
             <Button
@@ -144,110 +152,122 @@ export function MenuManager() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#F9E0E3]/50">
-                {filteredItems.map((item) => (
-                  <tr 
-                    key={item.id} 
-                    className={cn(
-                      "hover:bg-[#FDF8F7]/50 transition-colors group",
-                      !item.is_available && "opacity-60 grayscale-[0.5]"
-                    )}
-                  >
-                    <td className="py-3 px-6">
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-xl bg-[#F9E0E3]/30 overflow-hidden shrink-0 border border-[#F9E0E3] flex items-center justify-center">
-                          {item.image_url ? (
-                            <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" />
-                          ) : (
-                            <ImageIcon className="w-4 h-4 text-[#A89699]" />
-                          )}
+                {filteredItems.map((item) => {
+                  // FIXED: Get the smart fallback icon for this specific item's category
+                  const ItemFallbackIcon = categoryIcons[item.category] || Coffee;
+                  
+                  return (
+                    <tr 
+                      key={item.id} 
+                      className={cn(
+                        "hover:bg-[#FDF8F7]/50 transition-colors group",
+                        !item.is_available && "opacity-60 grayscale-[0.5]"
+                      )}
+                    >
+                      <td className="py-3 px-6">
+                        <div className="flex items-center gap-4">
+                          <div className="w-12 h-12 rounded-xl bg-[#F9E0E3]/30 overflow-hidden shrink-0 border border-[#F9E0E3] flex items-center justify-center">
+                            {/* FIXED: Show photo if uploaded, otherwise show the smart icon */}
+                            {item.image_url ? (
+                              <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" />
+                            ) : (
+                              <ItemFallbackIcon className="w-5 h-5 text-[#A89699]" />
+                            )}
+                          </div>
+                          <span className="font-serif italic font-bold text-base text-[#3A2C2C]">{item.name}</span>
                         </div>
-                        <span className="font-serif italic font-bold text-base text-[#3A2C2C]">{item.name}</span>
-                      </div>
-                    </td>
-                    <td className="py-3 px-6">
-                      <span className="text-xs font-black text-[#6F4E37]/60 uppercase tracking-widest bg-[#F4EDE4] px-3 py-1 rounded-md">
-                        {item.category}
-                      </span>
-                    </td>
-                    <td className="py-3 px-6">
-                      <span className="font-black text-[#6F4E37]">₹{item.price}</span>
-                    </td>
-                    <td className="py-3 px-6 text-center">
-                      <Switch
-                        checked={item.is_available}
-                        onCheckedChange={() => handleToggleAvailability(item)}
-                        className="data-[state=checked]:bg-[#8ED1B2] data-[state=unchecked]:bg-[#EBE1E3] scale-90"
-                      />
-                    </td>
-                    <td className="py-3 px-6 text-right">
-                      <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-[#6F4E37]" onClick={() => handleEdit(item)}>
-                          <Pencil className="w-4 h-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-red-400 hover:text-red-600 hover:bg-red-50" onClick={() => deleteMenuItem.mutate(item.id)}>
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="py-3 px-6">
+                        <span className="text-xs font-black text-[#6F4E37]/60 uppercase tracking-widest bg-[#F4EDE4] px-3 py-1 rounded-md">
+                          {item.category}
+                        </span>
+                      </td>
+                      <td className="py-3 px-6">
+                        <span className="font-black text-[#6F4E37]">₹{item.price}</span>
+                      </td>
+                      <td className="py-3 px-6 text-center">
+                        <Switch
+                          checked={item.is_available}
+                          onCheckedChange={() => handleToggleAvailability(item)}
+                          className="data-[state=checked]:bg-[#8ED1B2] data-[state=unchecked]:bg-[#EBE1E3] scale-90"
+                        />
+                      </td>
+                      <td className="py-3 px-6 text-right">
+                        <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-[#6F4E37]" onClick={() => handleEdit(item)}>
+                            <Pencil className="w-4 h-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-red-400 hover:text-red-600 hover:bg-red-50" onClick={() => deleteMenuItem.mutate(item.id)}>
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
 
           {/* MOBILE CARD VIEW */}
           <div className="md:hidden space-y-4">
-            {filteredItems.map((item) => (
-              <Card
-                key={item.id}
-                className={cn(
-                  'overflow-hidden transition-all duration-300 rounded-[1.8rem] border-none bg-white shadow-sm hover:shadow-md group',
-                  !item.is_available && 'opacity-60 grayscale-[0.8] bg-[#F4EDE4]'
-                )}
-              >
-                <CardContent className="p-3 flex items-center gap-4">
-                  <div className="w-16 h-16 rounded-2xl bg-[#F9E0E3]/30 overflow-hidden shrink-0 border border-[#F9E0E3] relative">
-                    {item.image_url ? (
-                      <img src={item.image_url} alt={item.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
-                    ) : (
-                      <div className="flex items-center justify-center h-full text-[#A89699]">
-                        <ImageIcon className="w-6 h-6" />
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex-1 min-w-0 pr-2">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h3 className="font-bold text-[15px] text-[#3A2C2C] truncate font-serif italic">{item.name}</h3>
-                      {!item.is_available && (
-                        <Badge className="text-[8px] h-4 uppercase tracking-widest font-black bg-[#3A2C2C] text-white border-none rounded-md px-1.5 py-0">Hidden</Badge>
+            {filteredItems.map((item) => {
+              // FIXED: Get the smart fallback icon for mobile cards too
+              const ItemFallbackIcon = categoryIcons[item.category] || Coffee;
+              
+              return (
+                <Card
+                  key={item.id}
+                  className={cn(
+                    'overflow-hidden transition-all duration-300 rounded-[1.8rem] border-none bg-white shadow-sm hover:shadow-md group',
+                    !item.is_available && 'opacity-60 grayscale-[0.8] bg-[#F4EDE4]'
+                  )}
+                >
+                  <CardContent className="p-3 flex items-center gap-4">
+                    <div className="w-16 h-16 rounded-2xl bg-[#F9E0E3]/30 overflow-hidden shrink-0 border border-[#F9E0E3] relative">
+                      {/* FIXED: Show photo if uploaded, otherwise show the smart icon */}
+                      {item.image_url ? (
+                        <img src={item.image_url} alt={item.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                      ) : (
+                        <div className="flex items-center justify-center h-full text-[#A89699]">
+                          <ItemFallbackIcon className="w-6 h-6" />
+                        </div>
                       )}
                     </div>
-                    <div className="flex items-center gap-2">
-                      <p className="text-[13px] font-black text-[#6F4E37]">₹{item.price}</p>
-                      <span className="text-[10px] font-bold text-[#F9E0E3] uppercase">•</span>
-                      <span className="text-[9px] font-black text-[#6F4E37]/40 uppercase tracking-[0.2em]">{item.category}</span>
-                    </div>
-                  </div>
 
-                  <div className="flex items-center gap-2 border-l border-[#F9E0E3] pl-4 pr-1">
-                    <Switch
-                      checked={item.is_available}
-                      onCheckedChange={() => handleToggleAvailability(item)}
-                      className="data-[state=checked]:bg-[#8ED1B2] data-[state=unchecked]:bg-[#EBE1E3] scale-90"
-                    />
-                    <div className="flex flex-col gap-1 ml-1">
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-[#3A2C2C]" onClick={() => handleEdit(item)}>
-                        <Pencil className="w-3.5 h-3.5" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-[#6F4E37]/30 hover:text-red-500" onClick={() => deleteMenuItem.mutate(item.id)}>
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </Button>
+                    <div className="flex-1 min-w-0 pr-2">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="font-bold text-[15px] text-[#3A2C2C] truncate font-serif italic">{item.name}</h3>
+                        {!item.is_available && (
+                          <Badge className="text-[8px] h-4 uppercase tracking-widest font-black bg-[#3A2C2C] text-white border-none rounded-md px-1.5 py-0">Hidden</Badge>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <p className="text-[13px] font-black text-[#6F4E37]">₹{item.price}</p>
+                        <span className="text-[10px] font-bold text-[#F9E0E3] uppercase">•</span>
+                        <span className="text-[9px] font-black text-[#6F4E37]/40 uppercase tracking-[0.2em]">{item.category}</span>
+                      </div>
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+
+                    <div className="flex items-center gap-2 border-l border-[#F9E0E3] pl-4 pr-1">
+                      <Switch
+                        checked={item.is_available}
+                        onCheckedChange={() => handleToggleAvailability(item)}
+                        className="data-[state=checked]:bg-[#8ED1B2] data-[state=unchecked]:bg-[#EBE1E3] scale-90"
+                      />
+                      <div className="flex flex-col gap-1 ml-1">
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-[#3A2C2C]" onClick={() => handleEdit(item)}>
+                          <Pencil className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-[#6F4E37]/30 hover:text-red-500" onClick={() => deleteMenuItem.mutate(item.id)}>
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         </>
       )}

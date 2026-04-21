@@ -1,21 +1,19 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { 
   Plus, 
   Minus, 
   Coffee, 
   Cookie, 
   UtensilsCrossed, 
-  ShoppingBag, 
+  Store, 
   Loader2, 
   Clock, 
   CheckCircle, 
   Receipt, 
-  Store, 
-  BadgeCheck,
   MessageSquare,
   Share2 
 } from 'lucide-react';
-import { useMenuItems, MenuCategory, MenuItem } from '@/hooks/useMenuItems';
+import { useMenuItems, MenuItem } from '@/hooks/useMenuItems';
 import { useOrders, useCreateOrder, useUpdateOrderStatus, OrderItem, Order } from '@/hooks/useOrders';
 import { useOrderNotifications } from '@/hooks/useOrderNotifications';
 import { useCafe } from '@/contexts/CafeContext'; 
@@ -32,13 +30,11 @@ import { InstallPrompt } from './InstallPrompt';
 import { BillDialog } from './BillDialog';
 import { CounterOrderDialog } from './CounterOrderDialog';
 
-const categoryIcons: Record<MenuCategory, React.ElementType> = {
+const categoryIcons: Record<string, React.ElementType> = {
   Drinks: Coffee,
   Snacks: Cookie,
   Meals: UtensilsCrossed,
 };
-
-const categories: MenuCategory[] = ['Drinks', 'Snacks', 'Meals'];
 
 interface CartItem {
   menuItem: MenuItem;
@@ -54,15 +50,26 @@ export function OrderEntry() {
   
   useOrderNotifications();
   
-  const [selectedCategory, setSelectedCategory] = useState<MenuCategory>('Drinks');
+  const [selectedCategory, setSelectedCategory] = useState<string>('Drinks');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [billOrder, setBillOrder] = useState<Order | null>(null);
   const [billDialogOpen, setBillDialogOpen] = useState(false);
   const [counterOrderOpen, setCounterOrderOpen] = useState(false);
 
+  // --- CUSTOM PRICING STATES ---
+  const [customPricingOpen, setCustomPricingOpen] = useState(false);
+  const [customName, setCustomName] = useState('');
+  const [customPrice, setCustomPrice] = useState('');
+
   const [tablePromptOpen, setTablePromptOpen] = useState(false);
   const [tempTableNumber, setTempTableNumber] = useState('');
   const [tempSpecialInstructions, setTempSpecialInstructions] = useState('');
+
+  const dynamicCategories = useMemo(() => {
+    const fetchedCategories = menuItems.map(item => item.category);
+    const combined = Array.from(new Set(['Drinks', 'Snacks', 'Meals', ...fetchedCategories]));
+    return combined.filter(Boolean); 
+  }, [menuItems]);
 
   const availableItems = menuItems.filter((item) => item.is_available && item.category === selectedCategory);
   const subtotal = cart.reduce((total, item) => total + Number(item.menuItem.price) * item.quantity, 0);
@@ -80,6 +87,31 @@ export function OrderEntry() {
       }
       return [...prev, { menuItem: item, quantity: 1 }];
     });
+  };
+
+  // --- HANDLE CUSTOM ITEM ADDITION ---
+  const handleAddCustom = () => {
+    if (!customPrice) return;
+    
+    // We add the missing fields as empty/null to satisfy the MenuItem interface
+    const manualItem: MenuItem = {
+      id: `custom-${Date.now()}`,
+      name: customName.trim() || "Custom Charge",
+      price: parseFloat(customPrice),
+      category: 'Custom',
+      is_available: true,
+      cafe_id: cafe?.id || '',
+      // ADD THESE placeholders to fix the error:
+      description: '',
+      image_url: '',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    addToCart(manualItem);
+    setCustomPricingOpen(false);
+    setCustomName('');
+    setCustomPrice('');
   };
 
   const updateQuantity = (itemId: string, quantity: number) => {
@@ -130,63 +162,100 @@ export function OrderEntry() {
 
   if (menuLoading) return <div className="p-8 flex justify-center"><Loader2 className="animate-spin text-[#6F4E37]" /></div>;
 
-  // --- MENU SECTION (CREATION STATION) ---
   function MenuSection() {
     return (
-      <div className="space-y-4">
-        <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-          {categories.map((cat) => {
-            const Icon = categoryIcons[cat];
+      <div className="flex flex-col h-full">
+        <div className="flex gap-2 overflow-x-auto pb-4 shrink-0 scrollbar-hide border-b border-[#EBE1E3] mb-4">
+          {dynamicCategories.map((cat) => {
+            const Icon = categoryIcons[cat] || Coffee;
             return (
-              <Button key={cat} size="sm" onClick={() => setSelectedCategory(cat)} className={cn("shrink-0 rounded-xl transition-all font-bold px-5", selectedCategory === cat ? "bg-[#6F4E37] text-white" : "bg-white text-[#6F4E37] border border-[#EBE1E3]")}>
+              <Button 
+                key={cat} 
+                size="sm" 
+                onClick={() => setSelectedCategory(cat)} 
+                className={cn(
+                  "shrink-0 rounded-xl transition-all font-bold px-5 h-12 shadow-sm", 
+                  selectedCategory === cat 
+                    ? "bg-[#6F4E37] text-white shadow-md scale-[1.02]" 
+                    : "bg-[#FDF8F7] text-[#6F4E37] border border-[#EBE1E3] hover:bg-[#F9E0E3]/50"
+                )}
+              >
                 <Icon className="w-4 h-4 mr-2" /> {cat}
               </Button>
             );
           })}
         </div>
-        <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-2">
-          {availableItems.map((item) => {
-            const quantity = getItemQuantity(item.id);
-            return (
-              <Card key={item.id} className="border-[#EBE1E3] shadow-none rounded-2xl overflow-hidden">
-                <CardContent className="p-3 flex items-center justify-between">
-                  <div className="flex-1">
-                    <h3 className="font-bold text-[#3A2C2C]">{item.name}</h3>
-                    <p className="font-black text-[#6F4E37]">₹{item.price}</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {quantity > 0 ? (
-                      <div className="flex items-center gap-2 bg-[#F7F1F2] p-1 rounded-xl">
-                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => updateQuantity(item.id, quantity - 1)}><Minus size={14}/></Button>
-                        <span className="w-6 text-center font-bold">{quantity}</span>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 bg-[#6F4E37] text-white" onClick={() => addToCart(item)}><Plus size={14}/></Button>
-                      </div>
+
+        <div className="flex-1 overflow-y-auto pr-2 pb-4 min-h-[400px]">
+          <div className="grid grid-cols-2 xl:grid-cols-3 gap-3">
+            
+            {/* CUSTOM CHARGE CARD */}
+            <Card 
+              className="border-2 border-dashed border-[#6F4E37]/30 bg-[#FDF8F7] rounded-2xl overflow-hidden hover:border-[#6F4E37] transition-all flex flex-col h-full items-center justify-center cursor-pointer group min-h-[140px] select-none active:scale-95"
+              onClick={() => setCustomPricingOpen(true)}
+            >
+              <Plus className="w-8 h-8 text-[#6F4E37] mb-2 group-hover:scale-110 transition-transform" />
+              <span className="font-black text-[#6F4E37] text-[10px] uppercase tracking-widest text-center">Add Custom Charge</span>
+            </Card>
+
+            {availableItems.map((item) => {
+              const quantity = getItemQuantity(item.id);
+              const ItemFallbackIcon = categoryIcons[item.category] || Coffee;
+
+              return (
+                <Card 
+                  key={item.id} 
+                  className={cn(
+                    "border-[#EBE1E3] shadow-sm rounded-2xl overflow-hidden hover:shadow-md transition-all flex flex-col h-full relative cursor-pointer select-none active:scale-[0.98]",
+                    quantity > 0 ? "border-[#6F4E37] bg-[#FDF8F7] ring-1 ring-[#6F4E37]/20" : "bg-white"
+                  )}
+                  onClick={() => quantity === 0 && addToCart(item)}
+                >
+                  <div className="h-24 bg-[#F4EDE4]/50 w-full flex items-center justify-center relative border-b border-[#EBE1E3]/50">
+                    {item.image_url ? (
+                      <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" />
                     ) : (
-                      <Button size="sm" className="bg-[#6F4E37] text-white rounded-xl h-9" onClick={() => addToCart(item)}><Plus className="mr-1" size={16}/> Add</Button>
+                      <ItemFallbackIcon className="w-8 h-8 text-[#A89699]/60" />
                     )}
+                    <div className="absolute top-2 right-2 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-lg shadow-sm">
+                      <span className="font-black text-[#6F4E37] text-xs">₹{item.price}</span>
+                    </div>
                   </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+
+                  <CardContent className="p-3 flex-1 flex flex-col justify-between gap-2">
+                    <h3 className="font-bold text-[#3A2C2C] text-sm leading-tight line-clamp-2">{item.name}</h3>
+                    <div className="mt-auto pt-2" onClick={(e) => e.stopPropagation()}>
+                      {quantity > 0 ? (
+                        <div className="flex items-center justify-between bg-white border border-[#EBE1E3] p-1 rounded-xl shadow-sm">
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-[#6F4E37]" onClick={() => updateQuantity(item.id, quantity - 1)}><Minus size={14}/></Button>
+                          <span className="font-black text-sm w-4 text-center text-[#3A2C2C]">{quantity}</span>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 bg-[#6F4E37] text-white" onClick={() => addToCart(item)}><Plus size={14}/></Button>
+                        </div>
+                      ) : (
+                        <Button size="sm" className="w-full bg-[#FDF8F7] text-[#6F4E37] border border-[#EBE1E3] hover:bg-[#6F4E37] hover:text-white rounded-xl h-10 transition-colors font-bold text-xs">
+                          <Plus className="mr-1.5 w-3 h-3"/> ADD
+                        </Button>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
         </div>
 
-        {/* --- ADDED: CART SUMMARY VISIBILITY --- */}
         {cart.length > 0 && (
-          <div className="sticky bottom-0 md:static pt-4 mt-6 border-t-2 border-dashed border-[#EBE1E3] bg-white z-10 pb-4 md:pb-0">
-            <h3 className="text-[10px] font-black uppercase tracking-widest text-[#A89699] mb-3">Current Draft</h3>
-            <div className="space-y-2 mb-4 max-h-[150px] overflow-y-auto">
+          <div className="shrink-0 pt-4 border-t-2 border-dashed border-[#EBE1E3] bg-white z-10">
+            <h3 className="text-[10px] font-black uppercase tracking-widest text-[#A89699] mb-3">Draft Order ({cart.reduce((a, b) => a + b.quantity, 0)} items)</h3>
+            <div className="space-y-2 mb-4 max-h-[140px] overflow-y-auto pr-2">
               {cart.map((c) => (
-                 <div key={c.menuItem.id} className="flex items-center justify-between bg-[#F7F1F2] p-2.5 rounded-xl">
-                    <span className="text-sm font-bold text-[#3A2C2C] truncate pr-2">
-                       <span className="text-[#6F4E37] mr-2">{c.quantity}x</span>
-                       {c.menuItem.name}
-                    </span>
+                 <div key={c.menuItem.id} className="flex items-center justify-between bg-[#FDF8F7] p-2.5 rounded-xl border border-[#EBE1E3]">
+                    <span className="text-sm font-bold text-[#3A2C2C] truncate pr-2"><span className="text-[#6F4E37] mr-2">{c.quantity}x</span>{c.menuItem.name}</span>
                     <span className="text-sm font-black text-[#6F4E37] shrink-0">₹{c.menuItem.price * c.quantity}</span>
                  </div>
               ))}
             </div>
-            <Button onClick={() => setTablePromptOpen(true)} className="w-full h-14 bg-[#3A2C2C] hover:bg-black text-white rounded-2xl font-black text-lg shadow-xl uppercase tracking-wider transition-all">
+            <Button onClick={() => setTablePromptOpen(true)} className="w-full h-14 bg-[#3A2C2C] hover:bg-black text-white rounded-2xl font-black text-lg shadow-xl uppercase tracking-wider transition-all active:scale-95">
               Review & Fire (₹{subtotal})
             </Button>
           </div>
@@ -195,19 +264,16 @@ export function OrderEntry() {
     );
   }
 
-  // --- FEED SECTION (KITCHEN COMMAND) ---
   function FeedSection() {
     return (
-      <>
+      <div className="space-y-4">
         {pendingOrders.map((order) => {
           const displayId = order.order_number || order.id.slice(0, 4).toUpperCase();
           return (
             <Card key={order.id} className="rounded-[2rem] border-[#EBE1E3] overflow-hidden shadow-sm bg-white hover:shadow-md transition-shadow">
               <div className={cn("p-4 flex justify-between items-center", order.status === 'preparing' ? 'bg-[#FFD6C9]/20' : 'bg-[#FDF8F7]')}>
                 <div className="flex items-center gap-3">
-                  <div className="bg-[#3A2C2C] text-white w-12 h-12 rounded-xl flex items-center justify-center font-black text-lg">
-                    {order.table_number || "NA"}
-                  </div>
+                  <div className="bg-[#3A2C2C] text-white w-12 h-12 rounded-xl flex items-center justify-center font-black text-lg">{order.table_number || "NA"}</div>
                   <div>
                     <span className="text-[10px] font-mono font-bold text-[#A89699] border border-[#EBE1E3] px-2 py-0.5 rounded-md bg-white">#{displayId}</span>
                     <p className="text-sm font-bold mt-1 text-[#3A2C2C]">{order.customer_name || "Guest"}</p>
@@ -218,12 +284,10 @@ export function OrderEntry() {
                 </Badge>
               </div>
               <CardContent className="p-4 space-y-4">
-                <div className="bg-[#F7F1F2] p-3 rounded-2xl space-y-2">
+                <div className="bg-[#F7F1F2] p-3 rounded-2xl space-y-2 border border-[#EBE1E3]/50">
                   {order.items.map((it, idx) => (
                     <div key={idx} className="flex justify-between items-center">
-                       <p className="text-sm font-bold text-[#3A2C2C]">
-                         <span className="text-[#6F4E37] mr-2 text-[15px]">{it.quantity}×</span>{it.name}
-                       </p>
+                       <p className="text-sm font-bold text-[#3A2C2C]"><span className="text-[#6F4E37] mr-2 text-[15px]">{it.quantity}×</span>{it.name}</p>
                        <p className="text-sm font-black text-[#6F4E37]">₹{it.price * it.quantity}</p>
                     </div>
                   ))}
@@ -253,18 +317,17 @@ export function OrderEntry() {
             </Card>
           );
         })}
-      </>
+      </div>
     );
   }
 
-  // --- MAIN RENDER ---
   return (
     <div className="bg-[#FDF8F7] min-h-screen pb-20 md:pb-8">
       <InstallPrompt />
       
       <div className="max-w-[1600px] mx-auto p-4 flex flex-col md:flex-row gap-4 items-center justify-between">
          <DailyInsights />
-         <Button className="w-full md:w-auto bg-white border-dashed border-2 border-[#EBE1E3] text-[#6F4E37] hover:bg-[#F7F1F2] h-12 px-8 rounded-2xl shadow-sm font-bold" onClick={() => setCounterOrderOpen(true)}>
+         <Button className="w-full md:w-auto bg-white border-dashed border-2 border-[#EBE1E3] text-[#6F4E37] hover:bg-[#F7F1F2] h-12 px-8 rounded-2xl shadow-sm font-bold transition-colors" onClick={() => setCounterOrderOpen(true)}>
            <Store className="w-5 h-5 mr-2" /> New Counter Order
          </Button>
       </div>
@@ -273,11 +336,10 @@ export function OrderEntry() {
         {/* MOBILE TABS */}
         <div className="md:hidden">
           <Tabs defaultValue="live-orders" className="w-full">
-            <TabsList className="w-full h-14 p-1.5 bg-[#F7F1F2] rounded-2xl mb-4">
-              <TabsTrigger value="new-order" className="flex-1 rounded-xl data-[state=active]:bg-[#6F4E37] data-[state=active]:text-white font-black uppercase text-[10px] tracking-widest">New Order</TabsTrigger>
-              <TabsTrigger value="live-orders" className="flex-1 rounded-xl data-[state=active]:bg-[#6F4E37] data-[state=active]:text-white font-black uppercase text-[10px] tracking-widest">Live Feed ({pendingOrders.length})</TabsTrigger>
+            <TabsList className="w-full h-14 p-1.5 bg-[#F7F1F2] rounded-2xl mb-4 border border-[#EBE1E3]">
+              <TabsTrigger value="new-order" className="flex-1 rounded-xl data-[state=active]:bg-[#6F4E37] data-[state=active]:text-white font-black uppercase text-[10px] tracking-widest transition-all">New Order</TabsTrigger>
+              <TabsTrigger value="live-orders" className="flex-1 rounded-xl data-[state=active]:bg-[#6F4E37] data-[state=active]:text-white font-black uppercase text-[10px] tracking-widest transition-all">Live Feed ({pendingOrders.length})</TabsTrigger>
             </TabsList>
-            
             <TabsContent value="new-order"><MenuSection /></TabsContent>
             <TabsContent value="live-orders"><FeedSection /></TabsContent>
           </Tabs>
@@ -285,32 +347,48 @@ export function OrderEntry() {
 
         {/* DESKTOP SPLIT VIEW */}
         <div className="hidden md:grid grid-cols-12 gap-8 items-start">
-          <section className="col-span-4 lg:col-span-3 sticky top-4 bg-white p-5 rounded-[2.5rem] border border-[#EBE1E3] shadow-sm">
-            <h2 className="font-serif text-2xl font-bold text-[#3A2C2C] italic border-b border-[#EBE1E3] pb-4 mb-4">Creation Station</h2>
+          <section className="col-span-12 lg:col-span-6 sticky top-4 bg-white p-6 rounded-[2.5rem] border border-[#EBE1E3] shadow-sm flex flex-col max-h-[90vh]">
+            <h2 className="font-serif text-2xl font-bold text-[#3A2C2C] italic border-b border-[#EBE1E3] pb-4 mb-4 shrink-0 flex items-center justify-between">
+              Creation Station
+              <Badge className="bg-[#F4EDE4] text-[#6F4E37] text-[10px] uppercase tracking-widest font-black shadow-none border-none">POS Grid</Badge>
+            </h2>
             <MenuSection />
           </section>
 
-          <section className="col-span-8 lg:col-span-9 space-y-6">
-            <div className="flex items-center justify-between border-b border-[#EBE1E3] pb-4">
+          <section className="col-span-12 lg:col-span-6 space-y-6">
+            <div className="flex items-center justify-between border-b border-[#EBE1E3] pb-4 bg-[#FDF8F7] sticky top-0 z-10 pt-2">
               <h2 className="font-serif text-2xl font-bold flex items-center gap-3 text-[#3A2C2C] italic">
                 <Clock className="w-6 h-6 text-[#6F4E37]" /> Kitchen Command
               </h2>
-              <Badge className="bg-[#6F4E37] text-white px-4 py-1 rounded-full text-sm font-bold shadow-sm">{pendingOrders.length} Active</Badge>
+              <Badge className="bg-[#6F4E37] text-white px-4 py-1.5 rounded-full text-xs font-black shadow-sm uppercase tracking-widest">{pendingOrders.length} Active</Badge>
             </div>
-            <div className="grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-6">
-               <FeedSection />
-            </div>
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4"><FeedSection /></div>
           </section>
         </div>
       </main>
 
-      {/* --- ADDED: CART SUMMARY IN CONFIRMATION DIALOG --- */}
+      {/* CUSTOM PRICING DIALOG */}
+      <Dialog open={customPricingOpen} onOpenChange={setCustomPricingOpen}>
+        <DialogContent className="rounded-3xl p-6 w-[90%] max-w-sm bg-white border-[#EBE1E3]">
+          <DialogHeader><DialogTitle className="text-xl font-bold font-serif italic text-[#3A2C2C]">Custom Charge</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-[#6F4E37]">Charge Name</label>
+              <Input value={customName} onChange={(e) => setCustomName(e.target.value)} placeholder="e.g. Extra Syrup, Packaging" className="h-12 rounded-xl bg-[#F7F1F2]" />
+            </div>
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-[#6F4E37]">Amount (₹)</label>
+              <Input type="number" value={customPrice} onChange={(e) => setCustomPrice(e.target.value)} placeholder="0.00" className="h-12 rounded-xl bg-[#F7F1F2] font-black text-lg" />
+            </div>
+          </div>
+          <DialogFooter><Button onClick={handleAddCustom} className="w-full h-14 bg-[#6F4E37] text-white font-black rounded-xl uppercase tracking-widest text-xs">Add to Bill</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* CONFIRMATION DIALOG */}
       <Dialog open={tablePromptOpen} onOpenChange={setTablePromptOpen}>
         <DialogContent className="rounded-3xl p-6 w-[90%] max-w-md bg-white border-[#EBE1E3]">
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-bold text-center font-serif italic text-[#3A2C2C]">Review & Confirm</DialogTitle>
-          </DialogHeader>
-          
+          <DialogHeader><DialogTitle className="text-2xl font-bold text-center font-serif italic text-[#3A2C2C]">Review & Confirm</DialogTitle></DialogHeader>
           <div className="bg-[#FDF8F7] p-4 rounded-2xl max-h-[200px] overflow-y-auto border border-[#EBE1E3]">
             <div className="space-y-2">
               {cart.map((c) => (
@@ -322,22 +400,21 @@ export function OrderEntry() {
             </div>
             <div className="pt-3 mt-3 border-t border-[#EBE1E3] flex justify-between items-center">
               <span className="font-black uppercase text-[10px] tracking-widest text-[#A89699]">Total Amount</span>
-              <span className="font-black text-[#3A2C2C] text-lg">₹{subtotal}</span>
+              <span className="font-black text-[#3A2C2C] text-xl">₹{subtotal}</span>
             </div>
           </div>
-
           <div className="py-2 space-y-4">
             <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-[#6F4E37]">Table Number</label>
-              <Input value={tempTableNumber} onChange={(e) => setTempTableNumber(e.target.value)} placeholder="Leave blank for Counter" className="h-14 text-center text-lg font-bold rounded-2xl border-[#EBE1E3] focus-visible:ring-[#6F4E37]" autoFocus />
+              <label className="text-[10px] font-black uppercase tracking-widest text-[#6F4E37]">Table Number / Reference</label>
+              <Input value={tempTableNumber} onChange={(e) => setTempTableNumber(e.target.value)} placeholder="e.g. Table 4, Takeaway" className="h-14 text-center text-lg font-bold rounded-2xl border-[#EBE1E3] bg-[#F7F1F2]" autoFocus />
             </div>
             <div className="space-y-2">
               <label className="text-[10px] font-black uppercase tracking-widest text-[#6F4E37]">Special Instructions</label>
-              <textarea value={tempSpecialInstructions} onChange={(e) => setTempSpecialInstructions(e.target.value)} placeholder="e.g. Less sugar, extra spicy..." className="w-full min-h-[80px] p-4 text-sm rounded-2xl border border-[#EBE1E3] bg-white outline-none focus:ring-2 focus:ring-[#6F4E37] resize-none placeholder:text-[#A89699]" />
+              <textarea value={tempSpecialInstructions} onChange={(e) => setTempSpecialInstructions(e.target.value)} placeholder="e.g. Less sugar, extra spicy..." className="w-full min-h-[80px] p-4 text-sm rounded-2xl border border-[#EBE1E3] bg-[#F7F1F2] outline-none focus:ring-2 focus:ring-[#6F4E37] resize-none" />
             </div>
           </div>
           <DialogFooter>
-            <Button onClick={handleConfirmOrder} className="w-full h-14 font-black rounded-2xl bg-[#6F4E37] text-white hover:bg-[#3A2C2C] uppercase tracking-widest text-sm shadow-lg" disabled={createOrder.isPending}>
+            <Button onClick={handleConfirmOrder} className="w-full h-14 font-black rounded-2xl bg-[#6F4E37] text-white hover:bg-[#3A2C2C] uppercase tracking-widest text-sm shadow-xl active:scale-95 transition-all" disabled={createOrder.isPending}>
               {createOrder.isPending ? 'Sending...' : 'Confirm & Fire'}
             </Button>
           </DialogFooter>

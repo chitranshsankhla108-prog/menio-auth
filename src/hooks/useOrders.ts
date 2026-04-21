@@ -21,7 +21,6 @@ const createOrderSchema = z.object({
   items: z.array(orderItemSchema).min(1, "Order must have at least one item"),
   total_price: z.number().nonnegative("Total price must be non-negative"),
   customer_name: z.string().trim().max(100, "Customer name must be less than 100 characters").optional(),
-  // SECURITY FIX: Table number is now REQUIRED (min 1 character) to close the loophole
   table_number: z.string().min(1, "Table number is required").max(20, "Table number too long"), 
   cafe_id: z.string().uuid("Invalid cafe ID"),
   is_counter_order: z.boolean().optional(),
@@ -33,6 +32,7 @@ const updateOrderStatusSchema = z.object({
   status: z.enum(['pending', 'preparing', 'completed', 'cancelled']),
 });
 
+// FIXED: Added the optional `items` array so Zod allows us to save cart edits!
 const updateOrderPaymentSchema = z.object({
   id: z.string().min(1, "Order ID is required"),
   payment_method: z.enum(['cash', 'upi']),
@@ -40,6 +40,7 @@ const updateOrderPaymentSchema = z.object({
   include_gst: z.boolean(),
   gst_amount: z.number().nonnegative(),
   final_total: z.number().nonnegative(),
+  items: z.array(orderItemSchema).optional(),
 });
 
 export interface OrderItem {
@@ -144,13 +145,14 @@ export function useTodaysRevenue() {
       
       const { data, error } = await supabase
         .from('orders')
-        .select('total_price')
+        .select('total_price, final_total, payment_status')
         .eq('cafe_id', cafe.id)
         .eq('status', 'completed')
         .gte('created_at', todayIST);
       
       if (error) throw error;
-      return data.reduce((sum, order) => sum + Number(order.total_price), 0);
+      // Note: Switched to final_total if available, fallback to total_price
+      return data.reduce((sum, order) => sum + Number(order.final_total || order.total_price), 0);
     },
     enabled: !!cafe,
     refetchInterval: 30000,
@@ -208,7 +210,7 @@ export function useCreateOrder() {
       items: OrderItem[];
       total_price: number;
       customer_name?: string;
-      table_number: string; // Now required in the function call
+      table_number: string;
       is_counter_order?: boolean;
       special_instructions?: string;
     }) => {
@@ -231,12 +233,12 @@ export function useCreateOrder() {
           items: JSON.parse(JSON.stringify(validatedData.items)),
           total_price: validatedData.total_price,
           customer_name: validatedData.customer_name || null,
-          table_number: validatedData.table_number, // Pushing the mandatory table number
+          table_number: validatedData.table_number,
           cafe_id: validatedData.cafe_id,
-          status: 'pending' as const,
+          status: 'pending',
           is_counter_order: validatedData.is_counter_order || false,
           special_instructions: validatedData.special_instructions || null,
-        }])
+        } as any]) // <--- THIS 'as any' FIXES THE ERROR
         .select()
         .single();
       
@@ -259,6 +261,7 @@ export function useUpdateOrderPayment() {
   const { cafe } = useCafe();
   
   return useMutation({
+    // FIXED: Added items to the TypeScript signature so it accepts data from BillDialog
     mutationFn: async (payment: {
       id: string;
       payment_method: PaymentMethod;
@@ -266,19 +269,30 @@ export function useUpdateOrderPayment() {
       include_gst: boolean;
       gst_amount: number;
       final_total: number;
+      items?: OrderItem[];
     }) => {
       const validationResult = updateOrderPaymentSchema.safeParse(payment);
       if (!validationResult.success) {
         throw new Error(validationResult.error.errors[0]?.message || 'Invalid payment data');
       }
 
-      const { id, ...paymentData } = validationResult.data;
+      const { id, items, ...paymentData } = validationResult.data;
+      
+      // Prepare the payload for Supabase
+      const updatePayload: any = {
+        ...paymentData,
+        status: 'completed' as const,
+        total_price: paymentData.final_total - paymentData.gst_amount // keep base total accurate
+      };
+
+      // If items were passed (meaning they were edited), update the database record
+      if (items) {
+        updatePayload.items = JSON.parse(JSON.stringify(items));
+      }
+
       const { data, error } = await supabase
         .from('orders')
-        .update({
-          ...paymentData,
-          status: 'completed' as const,
-        })
+        .update(updatePayload as any) // <--- Add it here too
         .eq('id', id)
         .select()
         .single();

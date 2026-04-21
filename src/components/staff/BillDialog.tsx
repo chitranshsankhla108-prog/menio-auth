@@ -1,10 +1,14 @@
-import { useState, useRef } from 'react';
-import { Hash, Receipt, Banknote, Smartphone, Share2, Check, Store, Printer, Image as ImageIcon } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { 
+  Hash, Receipt, Banknote, Smartphone, Share2, Check, Store, Printer, 
+  Image as ImageIcon, Plus, Minus, Trash2 
+} from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import { Order, useUpdateOrderPayment } from '@/hooks/useOrders';
 import { useCafe } from '@/contexts/CafeContext';
 import { format } from 'date-fns';
@@ -26,15 +30,56 @@ export function BillDialog({ order, open, onOpenChange }: BillDialogProps) {
   const { cafe } = useCafe();
   const updatePayment = useUpdateOrderPayment();
   
-  // Reference for the hidden receipt we want to turn into an image
+  // --- NEW: Local State for Order Editing ---
+  const [localItems, setLocalItems] = useState(order?.items || []);
+  const [customName, setCustomName] = useState('');
+  const [customPrice, setCustomPrice] = useState('');
+
+  // Sync local items when order opens
+  useEffect(() => {
+    if (order) setLocalItems(order.items);
+  }, [order, open]);
+
   const receiptRef = useRef<HTMLDivElement>(null);
 
   if (!order) return null;
 
   const displayId = order.order_number || order.id.slice(0, 6).toUpperCase();
-  const subtotal = Number(order.total_price);
+  
+  // --- NEW: Calculate totals based on LOCAL edited items ---
+  const subtotal = localItems.reduce((acc, item) => acc + (item.price * item.quantity), 0);
   const gstAmount = includeGst ? subtotal * GST_RATE : 0;
   const grandTotal = subtotal + gstAmount;
+
+  // --- EDIT LOGIC FUNCTIONS ---
+  const updateQty = (index: number, delta: number) => {
+    const updated = [...localItems];
+    updated[index].quantity = Math.max(1, updated[index].quantity + delta);
+    setLocalItems(updated);
+  };
+
+  const removeItem = (index: number) => {
+    setLocalItems(localItems.filter((_, i) => i !== index));
+  };
+
+  // FIXED: Removed OrderEntry-specific logic (MenuItem, addToCart) and simplified for BillDialog
+  const addCustomItem = () => {
+    if (!customPrice) {
+      toast.error("Please enter a price");
+      return;
+    }
+    
+    const newItem = {
+      id: `custom-${Date.now()}`,
+      name: customName.trim() || "Custom Charge",
+      price: parseFloat(customPrice),
+      quantity: 1
+    };
+
+    setLocalItems([...localItems, newItem]);
+    setCustomName('');
+    setCustomPrice('');
+  };
 
   const handleMarkAsPaid = () => {
     if (!selectedPayment) return;
@@ -45,6 +90,7 @@ export function BillDialog({ order, open, onOpenChange }: BillDialogProps) {
       include_gst: includeGst,
       gst_amount: gstAmount,
       final_total: grandTotal,
+      items: localItems, // Send the edited items to the database
     }, {
       onSuccess: () => {
         toast.success("Payment recorded successfully!");
@@ -55,7 +101,7 @@ export function BillDialog({ order, open, onOpenChange }: BillDialogProps) {
     });
   };
 
-  // --- SHARE TEXT (Standard Fast Share) ---
+  // --- SHARE TEXT ---
   const handleShareText = async () => {
     const billText = `━━━━━━━━━━━━━━━━━━━━━━\n${cafe?.name || 'Cafe'} Bill\n━━━━━━━━━━━━━━━━━━━━━━\nOrder #${displayId}\nTotal: ₹${grandTotal.toFixed(2)}\nThank you for visiting!`;
     if (navigator.share) {
@@ -66,36 +112,33 @@ export function BillDialog({ order, open, onOpenChange }: BillDialogProps) {
     }
   };
 
-  // --- PRINT THERMAL (Strictly for physical receipt machines) ---
+  // --- PRINT THERMAL ---
   const handlePrintNormal = () => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return toast.error("Please allow pop-ups.");
-    const content = renderNormal80mm(order, cafe, displayId, subtotal, includeGst, gstAmount, grandTotal);
+    // Pass localItems instead of order.items
+    const content = renderNormal80mm(localItems, cafe, displayId, subtotal, includeGst, gstAmount, grandTotal);
     printWindow.document.write(`<html><head><script src="https://cdn.tailwindcss.com"></script><style>@page { size: 80mm auto; margin: 0; } body { width: 80mm; padding: 6mm; font-family: monospace; }</style></head><body>${content}</body></html>`);
     printWindow.document.close();
     setTimeout(() => { printWindow.print(); printWindow.close(); }, 500);
   };
 
-  // --- SHARE DESIGNER (INSTANT IMAGE GENERATION) ---
+  // --- SHARE DESIGNER IMAGE ---
   const handleShareDesignerImage = async () => {
     if (!receiptRef.current) return;
-    
     toast.loading("Preparing aesthetic receipt...", { id: "share-toast" });
 
     try {
-      // Takes an instant screenshot of the hidden React component
       const canvas = await html2canvas(receiptRef.current, {
-        scale: 2, // High resolution for mobile
+        scale: 2, 
         backgroundColor: '#F4EDE4',
         logging: false
       });
 
       canvas.toBlob(async (blob) => {
         if (!blob) throw new Error("Failed to generate image");
-
         const file = new File([blob], `Menio_Bill_${displayId}.png`, { type: 'image/png' });
 
-        // Trigger Native Share (Mobile) or Download (PC)
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
           await navigator.share({
             files: [file],
@@ -104,7 +147,6 @@ export function BillDialog({ order, open, onOpenChange }: BillDialogProps) {
           });
           toast.success("Shared successfully!", { id: "share-toast" });
         } else {
-          // Fallback for PC browsers
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = url;
@@ -114,7 +156,6 @@ export function BillDialog({ order, open, onOpenChange }: BillDialogProps) {
           toast.success("Receipt image downloaded!", { id: "share-toast" });
         }
       }, 'image/png');
-
     } catch (error) {
       console.error(error);
       toast.error("Failed to generate image.", { id: "share-toast" });
@@ -125,14 +166,10 @@ export function BillDialog({ order, open, onOpenChange }: BillDialogProps) {
     <>
       {/* =========================================================
         THE HIDDEN RECEIPT (For Instant Image Generation)
-        This is rendered off-screen so html2canvas can grab it instantly 
-        without loading external CSS files.
-        =========================================================
-      */}
+        ========================================================= */}
       <div className="absolute top-0 left-0 -z-50 opacity-0 pointer-events-none">
         <div ref={receiptRef} className="w-[500px] bg-[#F4EDE4] p-10 font-sans">
           <div className="bg-white p-10 rounded-[2rem] border-2 border-dashed border-[#A89699] relative">
-            {/* Scalloped edge */}
             <div className="absolute -top-3 left-0 right-0 h-3 bg-[radial-gradient(circle,transparent_4px,#ffffff_5px)] bg-[length:12px_12px] -mt-[1px]" />
             
             <div className="text-center space-y-3 mb-8">
@@ -147,7 +184,8 @@ export function BillDialog({ order, open, onOpenChange }: BillDialogProps) {
             </div>
 
             <div className="space-y-4 font-mono text-lg border-b-2 border-dashed border-[#A89699] pb-6">
-              {order.items.map((item, idx) => (
+              {/* Uses localItems so the screenshot matches edits */}
+              {localItems.map((item, idx) => (
                 <div key={idx} className="flex justify-between items-start">
                   <span className="text-[#3A2C2C] max-w-[75%]"><span className="font-bold mr-3">{item.quantity}x</span>{item.name}</span>
                   <span className="font-bold text-[#6F4E37]">₹{(item.price * item.quantity).toFixed(2)}</span>
@@ -174,8 +212,7 @@ export function BillDialog({ order, open, onOpenChange }: BillDialogProps) {
 
       {/* =========================================================
         THE VISIBLE DIALOG UI
-        =========================================================
-      */}
+        ========================================================= */}
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto p-0 border-none bg-[#F4EDE4] rounded-[2rem] shadow-2xl">
           <DialogHeader className="p-6 bg-[#3A2C2C] text-white shrink-0">
@@ -185,9 +222,9 @@ export function BillDialog({ order, open, onOpenChange }: BillDialogProps) {
           </DialogHeader>
 
           <div className="p-6 space-y-6">
-            {/* The "Paper Receipt" UI on screen */}
             <div className="bg-white p-6 rounded-xl border border-dashed border-[#A89699] shadow-sm relative">
               <div className="absolute -top-3 left-0 right-0 h-3 bg-[radial-gradient(circle,transparent_4px,#ffffff_5px)] bg-[length:12px_12px] -mt-[1px]" />
+              
               <div className="text-center space-y-2 mb-6">
                 <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-[#F4EDE4] mb-1">
                   <Store className="w-6 h-6 text-[#6F4E37]" />
@@ -201,20 +238,56 @@ export function BillDialog({ order, open, onOpenChange }: BillDialogProps) {
                 </div>
               </div>
 
+              {/* --- EDITABLE ITEMS LIST --- */}
               <div className="space-y-3 font-mono text-sm border-b border-dashed border-[#A89699] pb-4">
-                {order.items.map((item, idx) => (
-                  <div key={idx} className="flex justify-between items-start">
-                    <span className="text-[#3A2C2C] max-w-[70%]"><span className="font-bold mr-2">{item.quantity}x</span>{item.name}</span>
-                    <span className="font-bold text-[#6F4E37]">₹{(item.price * item.quantity).toFixed(2)}</span>
+                <p className="text-[10px] font-black uppercase tracking-widest text-[#6F4E37]/50 mb-2 font-sans">Edit Quantities</p>
+                
+                {localItems.map((item, idx) => (
+                  <div key={idx} className="flex justify-between items-center bg-[#FDF8F7] p-2 rounded-lg border border-[#F9E0E3]">
+                    <div className="flex flex-col font-sans">
+                      <span className="text-[#3A2C2C] font-bold text-xs">{item.name}</span>
+                      <span className="text-[10px] text-[#A89699]">₹{item.price} each</span>
+                    </div>
+                    
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2 bg-white border border-[#EBE1E3] rounded-md px-2 py-1">
+                        <button onClick={() => updateQty(idx, -1)} className="text-[#6F4E37] hover:text-red-500"><Minus className="w-3 h-3" /></button>
+                        <span className="font-bold text-xs min-w-[12px] text-center">{item.quantity}</span>
+                        <button onClick={() => updateQty(idx, 1)} className="text-[#6F4E37] hover:text-green-600"><Plus className="w-3 h-3" /></button>
+                      </div>
+                      <button onClick={() => removeItem(idx)} className="text-[#A89699] hover:text-red-600">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 ))}
+
+                {/* --- CUSTOM CHARGE BOX --- */}
+                <div className="pt-3 flex gap-2 font-sans">
+                  <Input 
+                    placeholder="Custom Charge..." 
+                    value={customName}
+                    onChange={(e) => setCustomName(e.target.value)}
+                    className="h-9 text-[11px] rounded-lg border-[#EBE1E3] bg-[#FDF8F7]"
+                  />
+                  <Input 
+                    type="number" 
+                    placeholder="₹ Price" 
+                    value={customPrice}
+                    onChange={(e) => setCustomPrice(e.target.value)}
+                    className="h-9 w-20 text-[11px] rounded-lg border-[#EBE1E3] bg-[#FDF8F7] font-bold"
+                  />
+                  <Button onClick={addCustomItem} size="sm" className="h-9 w-9 p-0 bg-[#6F4E37] hover:bg-[#3A2C2C] rounded-lg shrink-0">
+                    <Plus className="w-4 h-4 text-white" />
+                  </Button>
+                </div>
               </div>
 
               <div className="space-y-2 pt-4">
                 <div className="flex justify-between text-sm font-bold text-[#A89699]"><span>Subtotal</span><span>₹{subtotal.toFixed(2)}</span></div>
                 {includeGst && <div className="flex justify-between text-sm font-bold text-[#A89699]"><span>GST (5%)</span><span>₹{gstAmount.toFixed(2)}</span></div>}
                 <div className="flex justify-between items-center mt-3 pt-3 border-t-2 border-[#3A2C2C]">
-                  <span className="font-black uppercase tracking-widest text-[#3A2C2C] text-sm">Grand Total</span>
+                  <span className="font-black uppercase tracking-widest text-[#3A2C2C] text-sm font-sans">Grand Total</span>
                   <span className="font-serif italic text-2xl font-black text-[#3A2C2C]">₹{grandTotal.toFixed(2)}</span>
                 </div>
               </div>
@@ -251,14 +324,14 @@ export function BillDialog({ order, open, onOpenChange }: BillDialogProps) {
 }
 
 // ==========================================
-// THERMAL HTML TEMPLATE (Only used if they click "Thermal Print")
+// THERMAL HTML TEMPLATE
 // ==========================================
-function renderNormal80mm(order: any, cafe: any, displayId: string, subtotal: number, includeGst: boolean, gstAmount: number, grandTotal: number) {
+function renderNormal80mm(items: any[], cafe: any, displayId: string, subtotal: number, includeGst: boolean, gstAmount: number, grandTotal: number) {
   return `
     <div class="text-[11px] uppercase text-black font-bold">
-      <div class="text-center mb-4"><h2 class="text-xl">${cafe.name || 'Cafe'}</h2><p>${format(new Date(), 'dd/MM/yyyy HH:mm')}</p><p>#${displayId}</p></div>
+      <div class="text-center mb-4"><h2 class="text-xl">${cafe?.name || 'Cafe'}</h2><p>${format(new Date(), 'dd/MM/yyyy HH:mm')}</p><p>#${displayId}</p></div>
       <div class="border-b-2 border-black border-dashed mb-2"></div>
-      ${order.items.map((it: any) => `<div class="flex justify-between mb-1"><span>${it.quantity}x ${it.name}</span><span>${(it.price * it.quantity).toFixed(2)}</span></div>`).join('')}
+      ${items.map((it: any) => `<div class="flex justify-between mb-1"><span>${it.quantity}x ${it.name}</span><span>${(it.price * it.quantity).toFixed(2)}</span></div>`).join('')}
       <div class="border-b-2 border-black border-dashed mt-3 mb-2"></div>
       <div class="flex justify-between"><span>SUBTOTAL</span><span>${subtotal.toFixed(2)}</span></div>
       ${includeGst ? `<div class="flex justify-between"><span>GST</span><span>${gstAmount.toFixed(2)}</span></div>` : ''}
