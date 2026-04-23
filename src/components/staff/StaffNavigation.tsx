@@ -1,10 +1,11 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Menu, ShoppingCart, MessageSquare, Settings } from 'lucide-react';
+import { Menu, ShoppingCart, History, MessageSquare, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const navItems = [
   { path: '/staff', icon: Menu, label: 'Menu' },
   { path: '/staff/orders', icon: ShoppingCart, label: 'Orders' },
+  { path: '/staff/history', icon: History, label: 'History' }, // <-- ADDED HISTORY HERE
   { path: '/staff/feedback', icon: MessageSquare, label: 'Feedback' },
   { path: '/staff/settings', icon: Settings, label: 'Settings' },
 ];
@@ -14,7 +15,7 @@ export function StaffNavigation() {
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 bg-[#F4EDE4]/90 backdrop-blur-2xl border-t border-[#F9E0E3] shadow-[0_-10px_40px_rgba(58,44,44,0.05)]">
-      <div className="flex items-center justify-around h-20 max-w-lg mx-auto px-4 pb-2">
+      <div className="flex items-center justify-around h-20 max-w-xl mx-auto px-2 pb-2">
         {navItems.map((item) => {
           // Check if it's the exact path OR if we are inside a sub-page of that path
           const isActive = location.pathname === item.path || 

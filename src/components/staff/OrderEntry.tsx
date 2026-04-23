@@ -232,10 +232,10 @@ export function OrderEntry() {
                           <Button variant="ghost" size="icon" className="h-8 w-8 bg-[#6F4E37] text-white" onClick={() => addToCart(item)}><Plus size={14}/></Button>
                         </div>
                       ) : (
-                        <Button size="sm" className="w-full bg-[#FDF8F7] text-[#6F4E37] border border-[#EBE1E3] hover:bg-[#6F4E37] hover:text-white rounded-xl h-10 transition-colors font-bold text-xs">
-                          <Plus className="mr-1.5 w-3 h-3"/> ADD
-                        </Button>
-                      )}
+                            <Button size="sm" onClick={() => addToCart(item)} className="w-full bg-[#FDF8F7] text-[#6F4E37] border border-[#EBE1E3] hover:bg-[#6F4E37] hover:text-white rounded-xl h-10 transition-colors font-bold text-xs">
+                           <Plus className="mr-1.5 w-3 h-3"/> ADD
+                           </Button>
+                         )}
                     </div>
                   </CardContent>
                 </Card>

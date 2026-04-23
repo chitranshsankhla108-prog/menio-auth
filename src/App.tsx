@@ -3,7 +3,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { HashRouter, Routes, Route, Navigate } from "react-router-dom"; // <-- CHANGED TO HASH ROUTER
+import { HashRouter, Routes, Route, Navigate } from "react-router-dom";
 import { LanguageProvider } from "./contexts/LanguageContext";
 import { CafeProvider } from "./contexts/CafeContext";
 
@@ -20,6 +20,8 @@ const MenuManager = lazy(() => import("./components/staff/MenuManager").then(m =
 const OrderEntry = lazy(() => import("./components/staff/OrderEntry").then(m => ({ default: m.OrderEntry })));
 const FeedbackList = lazy(() => import("./components/staff/FeedbackList").then(m => ({ default: m.FeedbackList })));
 const StaffSettings = lazy(() => import("./components/staff/StaffSettings").then(m => ({ default: m.StaffSettings })));
+// ADDED: Order History Lazy Load
+const OrderHistory = lazy(() => import("./components/staff/orderhistory").then(m => ({ default: m.OrderHistory })));
 
 const queryClient = new QueryClient();
 
@@ -38,17 +40,16 @@ const App = () => (
         <TooltipProvider>
           <Toaster />
           <Sonner />
-          {/* <-- IMPLEMENTED HASH ROUTER HERE --> */}
           <HashRouter>
             <Suspense fallback={<DashboardLoader />}>
               <Routes>
-                {/* 3. REDIRECT: Landing on '/' now takes you straight to the Dashboard */}
+                {/* REDIRECT: Landing on '/' now takes you straight to the Dashboard */}
                 <Route path="/" element={<Navigate to="/staff" replace />} />
                 
                 {/* Auth Page */}
                 <Route path="/auth" element={<Auth />} />
 
-                {/* 4. STAFF DASHBOARD: Fully protected */}
+                {/* STAFF DASHBOARD: Fully protected */}
                 <Route
                   path="/staff"
                   element={
@@ -59,6 +60,8 @@ const App = () => (
                 >
                   <Route index element={<MenuManager />} />
                   <Route path="orders" element={<OrderEntry />} />
+                  {/* ADDED: Order History Route */}
+                  <Route path="history" element={<OrderHistory />} />
                   <Route path="feedback" element={<FeedbackList />} />
                   <Route path="settings" element={<StaffSettings />} />
                 </Route>
