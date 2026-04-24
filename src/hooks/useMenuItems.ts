@@ -29,6 +29,8 @@ export interface MenuItem {
   cafe_id: string | null;
   created_at: string;
   updated_at: string;
+  is_combo?: boolean;
+  combo_contents?: { itemId: string; quantity: number; name: string }[];
 }
 
 // --- HOOKS ---
@@ -87,7 +89,7 @@ export function useAddMenuItem() {
         .insert([{
           name: validatedData.name,
           price: validatedData.price,
-          category: validatedData.category,
+          category: validatedData.category as any,
           is_available: validatedData.is_available ?? true,
           image_url: validatedData.image_url || null,
           description: validatedData.description || null,

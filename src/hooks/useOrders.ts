@@ -5,7 +5,7 @@ import { useEffect } from 'react';
 import { z } from 'zod';
 import { useCafe } from '@/contexts/CafeContext';
 
-export type OrderStatus = 'pending' | 'preparing' | 'completed' | 'cancelled';
+export type OrderStatus = 'pending' | 'preparing' | 'completed' | 'cancelled' | 'requested';
 export type PaymentMethod = 'cash' | 'upi';
 export type PaymentStatus = 'unpaid' | 'paid';
 
@@ -25,11 +25,13 @@ const createOrderSchema = z.object({
   cafe_id: z.string().uuid("Invalid cafe ID"),
   is_counter_order: z.boolean().optional(),
   special_instructions: z.string().max(500, "Special instructions too long").optional(),
+  status: z.string().optional(),
 });
 
 const updateOrderStatusSchema = z.object({
   id: z.string().min(1, "Order ID is required"),
-  status: z.enum(['pending', 'preparing', 'completed', 'cancelled']),
+  // FIXED: Added 'requested' to the enum so Zod allows status updates for new orders
+  status: z.enum(['requested', 'pending', 'preparing', 'completed', 'cancelled']),
 });
 
 // FIXED: Added the optional `items` array so Zod allows us to save cart edits!
@@ -206,6 +208,7 @@ export function useCreateOrder() {
   const { cafe } = useCafe();
   
   return useMutation({
+    // FIXED: Added `status` to the expected incoming variables
     mutationFn: async (order: {
       items: OrderItem[];
       total_price: number;
@@ -213,6 +216,7 @@ export function useCreateOrder() {
       table_number: string;
       is_counter_order?: boolean;
       special_instructions?: string;
+      status?: OrderStatus; 
     }) => {
       if (!cafe) throw new Error('No cafe selected');
 
@@ -235,10 +239,11 @@ export function useCreateOrder() {
           customer_name: validatedData.customer_name || null,
           table_number: validatedData.table_number,
           cafe_id: validatedData.cafe_id,
-          status: 'pending',
+          // FIXED: Use the passed-in status (like 'requested') or default to 'pending'
+          status: validatedData.status || 'pending',
           is_counter_order: validatedData.is_counter_order || false,
           special_instructions: validatedData.special_instructions || null,
-        } as any]) // <--- THIS 'as any' FIXES THE ERROR
+        } as any])
         .select()
         .single();
       
@@ -261,7 +266,6 @@ export function useUpdateOrderPayment() {
   const { cafe } = useCafe();
   
   return useMutation({
-    // FIXED: Added items to the TypeScript signature so it accepts data from BillDialog
     mutationFn: async (payment: {
       id: string;
       payment_method: PaymentMethod;
@@ -278,21 +282,19 @@ export function useUpdateOrderPayment() {
 
       const { id, items, ...paymentData } = validationResult.data;
       
-      // Prepare the payload for Supabase
       const updatePayload: any = {
         ...paymentData,
         status: 'completed' as const,
-        total_price: paymentData.final_total - paymentData.gst_amount // keep base total accurate
+        total_price: paymentData.final_total - paymentData.gst_amount 
       };
 
-      // If items were passed (meaning they were edited), update the database record
       if (items) {
         updatePayload.items = JSON.parse(JSON.stringify(items));
       }
 
       const { data, error } = await supabase
         .from('orders')
-        .update(updatePayload as any) // <--- Add it here too
+        .update(updatePayload as any) 
         .eq('id', id)
         .select()
         .single();

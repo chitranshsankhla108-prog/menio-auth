@@ -11,7 +11,8 @@ import {
   CheckCircle, 
   Receipt, 
   MessageSquare,
-  Share2 
+  Share2,
+  AlertCircle
 } from 'lucide-react';
 import { useMenuItems, MenuItem } from '@/hooks/useMenuItems';
 import { useOrders, useCreateOrder, useUpdateOrderStatus, OrderItem, Order } from '@/hooks/useOrders';
@@ -24,7 +25,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { format } from 'date-fns';
 import { DailyInsights } from './DailyInsights';
 import { InstallPrompt } from './InstallPrompt';
 import { BillDialog } from './BillDialog';
@@ -89,11 +89,9 @@ export function OrderEntry() {
     });
   };
 
-  // --- HANDLE CUSTOM ITEM ADDITION ---
   const handleAddCustom = () => {
     if (!customPrice) return;
     
-    // We add the missing fields as empty/null to satisfy the MenuItem interface
     const manualItem: MenuItem = {
       id: `custom-${Date.now()}`,
       name: customName.trim() || "Custom Charge",
@@ -101,7 +99,6 @@ export function OrderEntry() {
       category: 'Custom',
       is_available: true,
       cafe_id: cafe?.id || '',
-      // ADD THESE placeholders to fix the error:
       description: '',
       image_url: '',
       created_at: new Date().toISOString(),
@@ -136,7 +133,9 @@ export function OrderEntry() {
         total_price: subtotal,
         table_number: tempTableNumber.trim() || 'Counter', 
         special_instructions: tempSpecialInstructions.trim() || undefined,
-        is_counter_order: true
+        is_counter_order: true,
+        // Since THIS is a counter order taken by staff, it skips approval and goes straight to pending
+        status: 'pending' 
       },
       { onSuccess: () => {
           setCart([]);
@@ -158,9 +157,79 @@ export function OrderEntry() {
     setBillDialogOpen(true);
   };
 
+  // --- FILTERS FOR THE QUEUES ---
   const pendingOrders = orders.filter((o) => o.status === 'pending' || o.status === 'preparing');
+  const requestedOrders = orders.filter((o) => o.status === 'requested');
 
   if (menuLoading) return <div className="p-8 flex justify-center"><Loader2 className="animate-spin text-[#6F4E37]" /></div>;
+
+  // --- COMPONENT: APPROVAL QUEUE ---
+  function ApprovalQueue() {
+    if (requestedOrders.length === 0) return null;
+
+    return (
+      <div className="mb-8 space-y-3 animate-in fade-in slide-in-from-top-4">
+        <div className="flex items-center gap-2 px-2 bg-orange-100/50 py-2 rounded-xl border border-orange-200 w-fit">
+          <div className="w-2.5 h-2.5 rounded-full bg-orange-500 animate-pulse ml-1" />
+          <h3 className="text-xs font-black uppercase tracking-widest text-orange-800 pr-2 flex items-center gap-1.5">
+            <AlertCircle className="w-3.5 h-3.5" />
+            Verification Required ({requestedOrders.length})
+          </h3>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {requestedOrders.map((order) => {
+             const displayId = order.order_number || order.id.slice(0, 4).toUpperCase();
+             return (
+              <Card key={order.id} className="border-2 border-orange-200 bg-orange-50/80 rounded-2xl shadow-sm overflow-hidden hover:shadow-md transition-shadow">
+                <div className="p-4 flex flex-col gap-3">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-[10px] font-mono font-bold text-orange-700 bg-white border border-orange-200 px-2 py-0.5 rounded-md">#{displayId}</span>
+                        <span className="text-sm font-black text-[#3A2C2C]">
+                          Table {order.table_number || "NA"}
+                        </span>
+                      </div>
+                      <p className="text-xs font-bold text-[#6F4E37]">{order.customer_name || 'Guest'}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-lg font-black text-orange-600 tracking-tighter">₹{order.total_price}</p>
+                      <p className="text-[10px] font-bold text-orange-600/60 uppercase tracking-widest">{order.items.length} items</p>
+                    </div>
+                  </div>
+
+                  {order.items.length > 0 && (
+                    <div className="text-xs text-[#6F4E37] font-medium bg-white/50 p-2 rounded-lg line-clamp-1 border border-orange-100">
+                      {order.items.map(i => `${i.quantity}x ${i.name}`).join(', ')}
+                    </div>
+                  )}
+                  
+                  <div className="flex gap-2 mt-1">
+                    <Button 
+                      variant="outline" 
+                      className="flex-[0.8] h-11 rounded-xl text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700 hover:border-red-300 font-black text-[10px] uppercase tracking-widest"
+                      onClick={() => updateOrderStatus.mutate({ id: order.id, status: 'cancelled' })}
+                      disabled={updateOrderStatus.isPending}
+                    >
+                      Reject
+                    </Button>
+                    <Button 
+                      className="flex-[2] h-11 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-black text-xs uppercase tracking-widest shadow-md active:scale-95 transition-all"
+                      onClick={() => updateOrderStatus.mutate({ id: order.id, status: 'pending' })}
+                      disabled={updateOrderStatus.isPending}
+                    >
+                      Accept Order
+                    </Button>
+                  </div>
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
 
   function MenuSection() {
     return (
@@ -235,7 +304,7 @@ export function OrderEntry() {
                             <Button size="sm" onClick={() => addToCart(item)} className="w-full bg-[#FDF8F7] text-[#6F4E37] border border-[#EBE1E3] hover:bg-[#6F4E37] hover:text-white rounded-xl h-10 transition-colors font-bold text-xs">
                            <Plus className="mr-1.5 w-3 h-3"/> ADD
                            </Button>
-                         )}
+                          )}
                     </div>
                   </CardContent>
                 </Card>
@@ -338,10 +407,16 @@ export function OrderEntry() {
           <Tabs defaultValue="live-orders" className="w-full">
             <TabsList className="w-full h-14 p-1.5 bg-[#F7F1F2] rounded-2xl mb-4 border border-[#EBE1E3]">
               <TabsTrigger value="new-order" className="flex-1 rounded-xl data-[state=active]:bg-[#6F4E37] data-[state=active]:text-white font-black uppercase text-[10px] tracking-widest transition-all">New Order</TabsTrigger>
-              <TabsTrigger value="live-orders" className="flex-1 rounded-xl data-[state=active]:bg-[#6F4E37] data-[state=active]:text-white font-black uppercase text-[10px] tracking-widest transition-all">Live Feed ({pendingOrders.length})</TabsTrigger>
+              <TabsTrigger value="live-orders" className="flex-1 rounded-xl data-[state=active]:bg-[#6F4E37] data-[state=active]:text-white font-black uppercase text-[10px] tracking-widest transition-all flex items-center gap-1">
+                Feed {pendingOrders.length > 0 && `(${pendingOrders.length})`}
+                {requestedOrders.length > 0 && <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse ml-1"/>}
+              </TabsTrigger>
             </TabsList>
             <TabsContent value="new-order"><MenuSection /></TabsContent>
-            <TabsContent value="live-orders"><FeedSection /></TabsContent>
+            <TabsContent value="live-orders">
+              <ApprovalQueue />
+              <FeedSection />
+            </TabsContent>
           </Tabs>
         </div>
 
@@ -360,8 +435,20 @@ export function OrderEntry() {
               <h2 className="font-serif text-2xl font-bold flex items-center gap-3 text-[#3A2C2C] italic">
                 <Clock className="w-6 h-6 text-[#6F4E37]" /> Kitchen Command
               </h2>
-              <Badge className="bg-[#6F4E37] text-white px-4 py-1.5 rounded-full text-xs font-black shadow-sm uppercase tracking-widest">{pendingOrders.length} Active</Badge>
+              <div className="flex gap-2">
+                {requestedOrders.length > 0 && (
+                  <Badge className="bg-orange-500 text-white px-3 py-1.5 rounded-full text-xs font-black shadow-sm uppercase tracking-widest animate-pulse">
+                    {requestedOrders.length} New
+                  </Badge>
+                )}
+                <Badge className="bg-[#6F4E37] text-white px-4 py-1.5 rounded-full text-xs font-black shadow-sm uppercase tracking-widest">
+                  {pendingOrders.length} Active
+                </Badge>
+              </div>
             </div>
+            
+            <ApprovalQueue />
+            
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4"><FeedSection /></div>
           </section>
         </div>

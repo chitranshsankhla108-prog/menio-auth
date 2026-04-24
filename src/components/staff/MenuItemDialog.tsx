@@ -18,7 +18,7 @@ import {
   SelectValue,
   SelectSeparator
 } from '@/components/ui/select';
-import { Coffee, IndianRupee, ImageIcon, ListTree, FileText, UploadCloud, X, Loader2, Plus } from 'lucide-react';
+import { Coffee, IndianRupee, ImageIcon, ListTree, FileText, UploadCloud, X, Loader2, Plus, Minus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client'; 
 
@@ -32,7 +32,7 @@ export function MenuItemDialog({ open, onClose, editItem }: MenuItemDialogProps)
   const addMenuItem = useAddMenuItem();
   const updateMenuItem = useUpdateMenuItem();
   
-  // Fetch existing items to dynamically generate the category list
+  // Fetch existing items to dynamically generate the category list and combo options
   const { data: existingItems = [] } = useMenuItems();
   
   const [name, setName] = useState('');
@@ -47,6 +47,10 @@ export function MenuItemDialog({ open, onClose, editItem }: MenuItemDialogProps)
   // NEW STATES for dynamic categories
   const [isAddingNewCategory, setIsAddingNewCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
+
+  // NEW STATES for Combos
+  const [isCombo, setIsCombo] = useState(false);
+  const [comboContents, setComboContents] = useState<{itemId: string, quantity: number, name: string}[]>([]);
 
   // Auto-generate categories based on what's already in the database
   const dynamicCategories = useMemo(() => {
@@ -65,6 +69,9 @@ export function MenuItemDialog({ open, onClose, editItem }: MenuItemDialogProps)
       setAvailable(editItem.is_available);
       setImageUrl(editItem.image_url || '');
       setIsAddingNewCategory(false);
+      // Load combo data
+      setIsCombo(editItem.is_combo || false);
+      setComboContents(editItem.combo_contents || []);
     } else {
       setName('');
       setPrice('');
@@ -74,6 +81,9 @@ export function MenuItemDialog({ open, onClose, editItem }: MenuItemDialogProps)
       setImageUrl('');
       setIsAddingNewCategory(false);
       setNewCategoryName('');
+      // Reset combo data
+      setIsCombo(false);
+      setComboContents([]);
     }
   }, [editItem, open]);
 
@@ -119,14 +129,21 @@ export function MenuItemDialog({ open, onClose, editItem }: MenuItemDialogProps)
       return;
     }
 
+    if (isCombo && comboContents.length === 0) {
+      toast.error("Combo is empty", { description: "Please add at least one item to your combo."});
+      return;
+    }
+
     const itemData = {
       name: name.trim(),
       price: parseFloat(price) || 0,
-      // FIX: Added 'as MenuCategory' to force TypeScript to accept custom words
       category: finalCategory as MenuCategory, 
       description: description.trim() || undefined,
       is_available: available,
       image_url: imageUrl.trim() || undefined,
+      // COMBO FIELDS
+      is_combo: isCombo,
+      combo_contents: isCombo ? comboContents : [],
     };
 
     if (editItem) {
@@ -236,6 +253,93 @@ export function MenuItemDialog({ open, onClose, editItem }: MenuItemDialogProps)
                 </Select>
               )}
             </div>
+
+            {/* --- COMBO BUILDER SECTION --- */}
+            <div className="flex items-center justify-between bg-[#F4EDE4] p-4 rounded-xl border border-[#F9E0E3]">
+              <div className="space-y-0.5">
+                <Label htmlFor="is-combo" className="font-bold text-sm text-[#3A2C2C]">Make it a Combo</Label>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-[#6F4E37]/60">Bundle multiple items</p>
+              </div>
+              <Switch
+                id="is-combo"
+                checked={isCombo}
+                onCheckedChange={setIsCombo}
+                className="data-[state=checked]:bg-[#8ED1B2]"
+              />
+            </div>
+
+            {isCombo && (
+              <div className="space-y-4 p-5 bg-[#F7F1F2] rounded-xl border-2 border-dashed border-[#EBE1E3] animate-in fade-in slide-in-from-top-2">
+                <Label className="text-[10px] font-black uppercase tracking-widest text-[#6F4E37]">Included Items</Label>
+                
+                {comboContents.length > 0 && (
+                  <div className="space-y-2">
+                    {comboContents.map((cItem, index) => (
+                      <div key={index} className="flex items-center justify-between bg-white p-2.5 rounded-xl border border-[#EBE1E3] shadow-sm">
+                        <span className="text-sm font-bold text-[#3A2C2C] pl-2">{cItem.name}</span>
+                        <div className="flex items-center gap-2">
+                          <Button 
+                            type="button"
+                            variant="ghost" size="icon" className="h-7 w-7 rounded-full bg-[#F4EDE4] hover:bg-[#EBE1E3]" 
+                            onClick={() => {
+                              const updated = [...comboContents];
+                              updated[index].quantity = Math.max(1, updated[index].quantity - 1);
+                              setComboContents(updated);
+                            }}
+                          >
+                            <Minus className="w-3 h-3 text-[#3A2C2C]" />
+                          </Button>
+                          <span className="text-xs font-black w-4 text-center">{cItem.quantity}</span>
+                          <Button 
+                            type="button"
+                            variant="ghost" size="icon" className="h-7 w-7 rounded-full bg-[#F4EDE4] hover:bg-[#EBE1E3]"
+                            onClick={() => {
+                              const updated = [...comboContents];
+                              updated[index].quantity += 1;
+                              setComboContents(updated);
+                            }}
+                          >
+                            <Plus className="w-3 h-3 text-[#3A2C2C]" />
+                          </Button>
+                          <Button 
+                            type="button"
+                            variant="ghost" size="icon" className="h-7 w-7 text-red-400 hover:text-red-600 hover:bg-red-50 ml-1"
+                            onClick={() => setComboContents(comboContents.filter((_, i) => i !== index))}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <Select onValueChange={(val) => {
+                  const item = existingItems.find(i => i.id === val);
+                  if (item && !comboContents.find(si => si.itemId === item.id)) {
+                    setComboContents([...comboContents, { itemId: item.id, quantity: 1, name: item.name }]);
+                  }
+                }}>
+                  <SelectTrigger className="h-12 rounded-xl border-[#EBE1E3] bg-white focus-visible:ring-[#FFD6C9] font-bold text-[#6F4E37] px-4">
+                    <SelectValue placeholder="+ Add item to combo..." />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl border-[#EBE1E3] shadow-lg max-h-[200px]">
+                    {/* Filter out items that are already combos (no inception allowed) and items already in the list */}
+                    {existingItems.filter(i => !i.is_combo && i.id !== editItem?.id && !comboContents.find(c => c.itemId === i.id)).length === 0 ? (
+                       <div className="p-3 text-xs text-center text-[#A89699] font-bold">No items available</div>
+                    ) : (
+                       existingItems
+                         .filter(i => !i.is_combo && i.id !== editItem?.id && !comboContents.find(c => c.itemId === i.id))
+                         .map(i => (
+                           <SelectItem key={i.id} value={i.id} className="font-bold py-3 cursor-pointer focus:bg-[#F9E0E3]">
+                             {i.name}
+                           </SelectItem>
+                         ))
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label className="text-[10px] font-black uppercase tracking-widest text-[#6F4E37] flex items-center gap-1.5">

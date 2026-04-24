@@ -153,7 +153,6 @@ export function MenuManager() {
               </thead>
               <tbody className="divide-y divide-[#F9E0E3]/50">
                 {filteredItems.map((item) => {
-                  // FIXED: Get the smart fallback icon for this specific item's category
                   const ItemFallbackIcon = categoryIcons[item.category] || Coffee;
                   
                   return (
@@ -166,15 +165,26 @@ export function MenuManager() {
                     >
                       <td className="py-3 px-6">
                         <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 rounded-xl bg-[#F9E0E3]/30 overflow-hidden shrink-0 border border-[#F9E0E3] flex items-center justify-center">
-                            {/* FIXED: Show photo if uploaded, otherwise show the smart icon */}
+                          <div className="w-12 h-12 rounded-xl bg-[#F9E0E3]/30 overflow-hidden shrink-0 border border-[#F9E0E3] flex items-center justify-center relative">
                             {item.image_url ? (
                               <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" />
                             ) : (
                               <ItemFallbackIcon className="w-5 h-5 text-[#A89699]" />
                             )}
                           </div>
-                          <span className="font-serif italic font-bold text-base text-[#3A2C2C]">{item.name}</span>
+                          <div className="flex flex-col">
+                            <span className="font-serif italic font-bold text-base text-[#3A2C2C]">{item.name}</span>
+                            {/* NEW: COMBO DISPLAY DESKTOP */}
+                            {item.is_combo && item.combo_contents && item.combo_contents.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {item.combo_contents.map((c, i) => (
+                                  <span key={i} className="text-[9px] font-bold text-[#A89699] bg-[#F4EDE4] px-1.5 py-0.5 rounded-sm">
+                                    {c.quantity}x {c.name}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </td>
                       <td className="py-3 px-6">
@@ -212,7 +222,6 @@ export function MenuManager() {
           {/* MOBILE CARD VIEW */}
           <div className="md:hidden space-y-4">
             {filteredItems.map((item) => {
-              // FIXED: Get the smart fallback icon for mobile cards too
               const ItemFallbackIcon = categoryIcons[item.category] || Coffee;
               
               return (
@@ -223,9 +232,8 @@ export function MenuManager() {
                     !item.is_available && 'opacity-60 grayscale-[0.8] bg-[#F4EDE4]'
                   )}
                 >
-                  <CardContent className="p-3 flex items-center gap-4">
-                    <div className="w-16 h-16 rounded-2xl bg-[#F9E0E3]/30 overflow-hidden shrink-0 border border-[#F9E0E3] relative">
-                      {/* FIXED: Show photo if uploaded, otherwise show the smart icon */}
+                  <CardContent className="p-3 flex items-start gap-4">
+                    <div className="w-16 h-16 rounded-2xl bg-[#F9E0E3]/30 overflow-hidden shrink-0 border border-[#F9E0E3] relative mt-1">
                       {item.image_url ? (
                         <img src={item.image_url} alt={item.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
                       ) : (
@@ -247,9 +255,20 @@ export function MenuManager() {
                         <span className="text-[10px] font-bold text-[#F9E0E3] uppercase">•</span>
                         <span className="text-[9px] font-black text-[#6F4E37]/40 uppercase tracking-[0.2em]">{item.category}</span>
                       </div>
+                      
+                      {/* NEW: COMBO DISPLAY MOBILE */}
+                      {item.is_combo && item.combo_contents && item.combo_contents.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {item.combo_contents.map((c, i) => (
+                            <span key={i} className="text-[8px] font-bold text-[#6F4E37] bg-[#F9E0E3]/50 px-1.5 py-0.5 rounded-sm">
+                              {c.quantity}x {c.name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
-                    <div className="flex items-center gap-2 border-l border-[#F9E0E3] pl-4 pr-1">
+                    <div className="flex items-center gap-2 border-l border-[#F9E0E3] pl-4 pr-1 h-full py-2">
                       <Switch
                         checked={item.is_available}
                         onCheckedChange={() => handleToggleAvailability(item)}
