@@ -22,7 +22,7 @@ interface BillDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-const GST_RATE = 0.05; // 5% GST
+const GST_RATE = 0.05;
 
 export function BillDialog({ order, open, onOpenChange }: BillDialogProps) {
   const [includeGst, setIncludeGst] = useState(false);
@@ -30,28 +30,24 @@ export function BillDialog({ order, open, onOpenChange }: BillDialogProps) {
   const { cafe } = useCafe();
   const updatePayment = useUpdateOrderPayment();
   
-  // --- NEW: Local State for Order Editing ---
   const [localItems, setLocalItems] = useState(order?.items || []);
   const [customName, setCustomName] = useState('');
   const [customPrice, setCustomPrice] = useState('');
 
-  // Sync local items when order opens
+  const receiptRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (order) setLocalItems(order.items);
   }, [order, open]);
-
-  const receiptRef = useRef<HTMLDivElement>(null);
 
   if (!order) return null;
 
   const displayId = order.order_number || order.id.slice(0, 6).toUpperCase();
   
-  // --- NEW: Calculate totals based on LOCAL edited items ---
   const subtotal = localItems.reduce((acc, item) => acc + (item.price * item.quantity), 0);
   const gstAmount = includeGst ? subtotal * GST_RATE : 0;
   const grandTotal = subtotal + gstAmount;
 
-  // --- EDIT LOGIC FUNCTIONS ---
   const updateQty = (index: number, delta: number) => {
     const updated = [...localItems];
     updated[index].quantity = Math.max(1, updated[index].quantity + delta);
@@ -62,20 +58,14 @@ export function BillDialog({ order, open, onOpenChange }: BillDialogProps) {
     setLocalItems(localItems.filter((_, i) => i !== index));
   };
 
-  // FIXED: Removed OrderEntry-specific logic (MenuItem, addToCart) and simplified for BillDialog
   const addCustomItem = () => {
-    if (!customPrice) {
-      toast.error("Please enter a price");
-      return;
-    }
-    
+    if (!customPrice) return toast.error("Please enter a price");
     const newItem = {
       id: `custom-${Date.now()}`,
       name: customName.trim() || "Custom Charge",
       price: parseFloat(customPrice),
       quantity: 1
     };
-
     setLocalItems([...localItems, newItem]);
     setCustomName('');
     setCustomPrice('');
@@ -90,7 +80,7 @@ export function BillDialog({ order, open, onOpenChange }: BillDialogProps) {
       include_gst: includeGst,
       gst_amount: gstAmount,
       final_total: grandTotal,
-      items: localItems, // Send the edited items to the database
+      items: localItems, 
     }, {
       onSuccess: () => {
         toast.success("Payment recorded successfully!");
@@ -101,7 +91,6 @@ export function BillDialog({ order, open, onOpenChange }: BillDialogProps) {
     });
   };
 
-  // --- SHARE TEXT ---
   const handleShareText = async () => {
     const billText = `━━━━━━━━━━━━━━━━━━━━━━\n${cafe?.name || 'Cafe'} Bill\n━━━━━━━━━━━━━━━━━━━━━━\nOrder #${displayId}\nTotal: ₹${grandTotal.toFixed(2)}\nThank you for visiting!`;
     if (navigator.share) {
@@ -112,49 +101,36 @@ export function BillDialog({ order, open, onOpenChange }: BillDialogProps) {
     }
   };
 
-  // --- PRINT THERMAL ---
+  // --- THE FIX: THERMAL PRINT ---
+  // We use window.print(), but the <style> tag below forces the browser 
+  // to hide the app and ONLY show the pure black & white #thermal-receipt
   const handlePrintNormal = () => {
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) return toast.error("Please allow pop-ups.");
-    // Pass localItems instead of order.items
-    const content = renderNormal80mm(localItems, cafe, displayId, subtotal, includeGst, gstAmount, grandTotal);
-    printWindow.document.write(`<html><head><script src="https://cdn.tailwindcss.com"></script><style>@page { size: 80mm auto; margin: 0; } body { width: 80mm; padding: 6mm; font-family: monospace; }</style></head><body>${content}</body></html>`);
-    printWindow.document.close();
-    setTimeout(() => { printWindow.print(); printWindow.close(); }, 500);
+    window.print();
   };
 
-  // --- SHARE DESIGNER IMAGE ---
+  // --- THE FIX: SHARE IMAGE ---
   const handleShareDesignerImage = async () => {
     if (!receiptRef.current) return;
     toast.loading("Preparing aesthetic receipt...", { id: "share-toast" });
 
     try {
       const canvas = await html2canvas(receiptRef.current, {
-        scale: 2, 
+        scale: 3, 
         backgroundColor: '#F4EDE4',
-        logging: false
+        logging: false,
+        useCORS: true, 
+        allowTaint: true
       });
 
       canvas.toBlob(async (blob) => {
         if (!blob) throw new Error("Failed to generate image");
-        const file = new File([blob], `Menio_Bill_${displayId}.png`, { type: 'image/png' });
-
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          await navigator.share({
-            files: [file],
-            title: `Bill #${displayId}`,
-            text: `Thank you for visiting ${cafe?.name || 'us'}! Here is your receipt.`
-          });
-          toast.success("Shared successfully!", { id: "share-toast" });
-        } else {
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `Menio_Bill_${displayId}.png`;
-          a.click();
-          URL.revokeObjectURL(url);
-          toast.success("Receipt image downloaded!", { id: "share-toast" });
-        }
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Menio_Bill_${displayId}.png`;
+        a.click();
+        URL.revokeObjectURL(url);
+        toast.success("Receipt image downloaded!", { id: "share-toast" });
       }, 'image/png');
     } catch (error) {
       console.error(error);
@@ -164,14 +140,51 @@ export function BillDialog({ order, open, onOpenChange }: BillDialogProps) {
 
   return (
     <>
-      {/* =========================================================
-        THE HIDDEN RECEIPT (For Instant Image Generation)
-        ========================================================= */}
-      <div className="absolute top-0 left-0 -z-50 opacity-0 pointer-events-none">
-        <div ref={receiptRef} className="w-[500px] bg-[#F4EDE4] p-10 font-sans">
+      {/* MAGIC CSS INJECTION: 
+        When printing, this hides the entire app and makes the thermal receipt visible!
+      */}
+      <style>{`
+        @media print {
+          body * { visibility: hidden !important; }
+          #thermal-receipt, #thermal-receipt * { visibility: visible !important; }
+          #thermal-receipt {
+            position: absolute; left: 0; top: 0; width: 80mm; margin: 0; padding: 0;
+          }
+          @page { size: 80mm auto; margin: 0; }
+        }
+      `}</style>
+
+      {/* --- THE PURE THERMAL RECEIPT (Hidden on screen, visible on printer) --- */}
+      <div id="thermal-receipt" className="hidden print:block fixed top-0 left-0 w-[80mm] p-[4mm] text-black bg-white text-[13px] font-mono leading-tight z-[9999]">
+        <div className="text-center font-bold mb-2">
+          <div className="text-xl mb-1">{cafe?.name || 'Cafe'}</div>
+          <div>{format(new Date(), 'dd/MM/yyyy HH:mm')}</div>
+          <div>Order #{displayId}</div>
+        </div>
+        <div className="border-b border-black border-dashed my-2"></div>
+        {localItems.map((item, idx) => (
+          <div key={idx} className="flex justify-between mb-1">
+            <span className="w-3/4 pr-2">{item.quantity}x {item.name}</span>
+            <span className="w-1/4 text-right">{(item.price * item.quantity).toFixed(2)}</span>
+          </div>
+        ))}
+        <div className="border-b border-black border-dashed my-2"></div>
+        <div className="flex justify-between"><span>SUBTOTAL</span><span>{subtotal.toFixed(2)}</span></div>
+        {includeGst && <div className="flex justify-between"><span>GST (5%)</span><span>{gstAmount.toFixed(2)}</span></div>}
+        <div className="border-b-2 border-black border-solid my-2"></div>
+        <div className="flex justify-between text-[16px] font-bold">
+          <span>TOTAL</span><span>Rs. {grandTotal.toFixed(2)}</span>
+        </div>
+        <div className="border-b border-black border-dashed my-2"></div>
+        <div className="text-center font-bold mt-2">Thank you! Visit again.</div>
+      </div>
+
+      {/* --- THE AESTHETIC RECEIPT (For Image Sharing) --- */}
+      {/* FIX: Moved off-screen using absolute -left-[9999px] instead of opacity-0 so html2canvas doesn't crash! */}
+      <div className="absolute top-0 -left-[9999px] pointer-events-none">
+        <div ref={receiptRef} className="w-[500px] bg-[#F4EDE4] p-10 font-sans text-black">
           <div className="bg-white p-10 rounded-[2rem] border-2 border-dashed border-[#A89699] relative">
             <div className="absolute -top-3 left-0 right-0 h-3 bg-[radial-gradient(circle,transparent_4px,#ffffff_5px)] bg-[length:12px_12px] -mt-[1px]" />
-            
             <div className="text-center space-y-3 mb-8">
               <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-[#F4EDE4] mb-2">
                 <Store className="w-8 h-8 text-[#6F4E37]" />
@@ -182,9 +195,7 @@ export function BillDialog({ order, open, onOpenChange }: BillDialogProps) {
                 <span className="font-mono text-sm font-bold border border-[#6F4E37] text-[#6F4E37] bg-[#F4EDE4]/50 px-4 py-1.5 rounded-full">#{displayId}</span>
               </div>
             </div>
-
             <div className="space-y-4 font-mono text-lg border-b-2 border-dashed border-[#A89699] pb-6">
-              {/* Uses localItems so the screenshot matches edits */}
               {localItems.map((item, idx) => (
                 <div key={idx} className="flex justify-between items-start">
                   <span className="text-[#3A2C2C] max-w-[75%]"><span className="font-bold mr-3">{item.quantity}x</span>{item.name}</span>
@@ -192,7 +203,6 @@ export function BillDialog({ order, open, onOpenChange }: BillDialogProps) {
                 </div>
               ))}
             </div>
-
             <div className="space-y-3 pt-6">
               <div className="flex justify-between text-base font-bold text-[#A89699]"><span>Subtotal</span><span>₹{subtotal.toFixed(2)}</span></div>
               {includeGst && <div className="flex justify-between text-base font-bold text-[#A89699]"><span>GST (5%)</span><span>₹{gstAmount.toFixed(2)}</span></div>}
@@ -201,20 +211,13 @@ export function BillDialog({ order, open, onOpenChange }: BillDialogProps) {
                 <span className="font-serif italic text-4xl font-black text-[#3A2C2C]">₹{grandTotal.toFixed(2)}</span>
               </div>
             </div>
-
-            <div className="text-center mt-10 text-[#A89699]">
-               <p className="font-bold uppercase tracking-widest text-sm">Thank You for Visiting</p>
-               <p className="text-xs uppercase tracking-[0.3em] opacity-60 mt-1">Powered by Menio</p>
-            </div>
           </div>
         </div>
       </div>
 
-      {/* =========================================================
-        THE VISIBLE DIALOG UI
-        ========================================================= */}
+      {/* --- THE VISIBLE DIALOG UI --- */}
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto p-0 border-none bg-[#F4EDE4] rounded-[2rem] shadow-2xl">
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto p-0 border-none bg-[#F4EDE4] rounded-[2rem] shadow-2xl print:hidden">
           <DialogHeader className="p-6 bg-[#3A2C2C] text-white shrink-0">
             <DialogTitle className="flex items-center gap-2 font-serif text-2xl italic tracking-tight text-[#FFD6C9]">
               <Receipt className="w-6 h-6" /> Invoice
@@ -230,7 +233,6 @@ export function BillDialog({ order, open, onOpenChange }: BillDialogProps) {
                   <Store className="w-6 h-6 text-[#6F4E37]" />
                 </div>
                 <h3 className="font-serif text-2xl font-black text-[#3A2C2C] uppercase tracking-widest">{cafe?.name || 'Cafe'}</h3>
-                <p className="text-[10px] uppercase tracking-widest text-[#A89699] font-bold">{format(new Date(order.created_at), 'dd MMM yyyy • h:mm a')}</p>
                 <div className="flex items-center justify-center gap-2 pt-2">
                   <Badge variant="outline" className="font-mono text-[10px] font-bold border-[#6F4E37] text-[#6F4E37] bg-[#F4EDE4]/50">
                     <Hash className="w-3 h-3 mr-0.5" />{displayId}
@@ -238,48 +240,27 @@ export function BillDialog({ order, open, onOpenChange }: BillDialogProps) {
                 </div>
               </div>
 
-              {/* --- EDITABLE ITEMS LIST --- */}
               <div className="space-y-3 font-mono text-sm border-b border-dashed border-[#A89699] pb-4">
-                <p className="text-[10px] font-black uppercase tracking-widest text-[#6F4E37]/50 mb-2 font-sans">Edit Quantities</p>
-                
                 {localItems.map((item, idx) => (
                   <div key={idx} className="flex justify-between items-center bg-[#FDF8F7] p-2 rounded-lg border border-[#F9E0E3]">
                     <div className="flex flex-col font-sans">
                       <span className="text-[#3A2C2C] font-bold text-xs">{item.name}</span>
                       <span className="text-[10px] text-[#A89699]">₹{item.price} each</span>
                     </div>
-                    
                     <div className="flex items-center gap-3">
                       <div className="flex items-center gap-2 bg-white border border-[#EBE1E3] rounded-md px-2 py-1">
                         <button onClick={() => updateQty(idx, -1)} className="text-[#6F4E37] hover:text-red-500"><Minus className="w-3 h-3" /></button>
                         <span className="font-bold text-xs min-w-[12px] text-center">{item.quantity}</span>
                         <button onClick={() => updateQty(idx, 1)} className="text-[#6F4E37] hover:text-green-600"><Plus className="w-3 h-3" /></button>
                       </div>
-                      <button onClick={() => removeItem(idx)} className="text-[#A89699] hover:text-red-600">
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      <button onClick={() => removeItem(idx)} className="text-[#A89699] hover:text-red-600"><Trash2 className="w-3.5 h-3.5" /></button>
                     </div>
                   </div>
                 ))}
-
-                {/* --- CUSTOM CHARGE BOX --- */}
                 <div className="pt-3 flex gap-2 font-sans">
-                  <Input 
-                    placeholder="Custom Charge..." 
-                    value={customName}
-                    onChange={(e) => setCustomName(e.target.value)}
-                    className="h-9 text-[11px] rounded-lg border-[#EBE1E3] bg-[#FDF8F7]"
-                  />
-                  <Input 
-                    type="number" 
-                    placeholder="₹ Price" 
-                    value={customPrice}
-                    onChange={(e) => setCustomPrice(e.target.value)}
-                    className="h-9 w-20 text-[11px] rounded-lg border-[#EBE1E3] bg-[#FDF8F7] font-bold"
-                  />
-                  <Button onClick={addCustomItem} size="sm" className="h-9 w-9 p-0 bg-[#6F4E37] hover:bg-[#3A2C2C] rounded-lg shrink-0">
-                    <Plus className="w-4 h-4 text-white" />
-                  </Button>
+                  <Input placeholder="Custom Charge..." value={customName} onChange={(e) => setCustomName(e.target.value)} className="h-9 text-[11px] rounded-lg border-[#EBE1E3] bg-[#FDF8F7]" />
+                  <Input type="number" placeholder="₹ Price" value={customPrice} onChange={(e) => setCustomPrice(e.target.value)} className="h-9 w-20 text-[11px] rounded-lg border-[#EBE1E3] bg-[#FDF8F7] font-bold" />
+                  <Button onClick={addCustomItem} size="sm" className="h-9 w-9 p-0 bg-[#6F4E37] hover:bg-[#3A2C2C] rounded-lg shrink-0"><Plus className="w-4 h-4 text-white" /></Button>
                 </div>
               </div>
 
@@ -321,22 +302,4 @@ export function BillDialog({ order, open, onOpenChange }: BillDialogProps) {
       </Dialog>
     </>
   );
-}
-
-// ==========================================
-// THERMAL HTML TEMPLATE
-// ==========================================
-function renderNormal80mm(items: any[], cafe: any, displayId: string, subtotal: number, includeGst: boolean, gstAmount: number, grandTotal: number) {
-  return `
-    <div class="text-[11px] uppercase text-black font-bold">
-      <div class="text-center mb-4"><h2 class="text-xl">${cafe?.name || 'Cafe'}</h2><p>${format(new Date(), 'dd/MM/yyyy HH:mm')}</p><p>#${displayId}</p></div>
-      <div class="border-b-2 border-black border-dashed mb-2"></div>
-      ${items.map((it: any) => `<div class="flex justify-between mb-1"><span>${it.quantity}x ${it.name}</span><span>${(it.price * it.quantity).toFixed(2)}</span></div>`).join('')}
-      <div class="border-b-2 border-black border-dashed mt-3 mb-2"></div>
-      <div class="flex justify-between"><span>SUBTOTAL</span><span>${subtotal.toFixed(2)}</span></div>
-      ${includeGst ? `<div class="flex justify-between"><span>GST</span><span>${gstAmount.toFixed(2)}</span></div>` : ''}
-      <div class="border-b-2 border-black border-solid my-2"></div>
-      <div class="flex justify-between text-sm"><span>TOTAL</span><span>Rs. ${grandTotal.toFixed(2)}</span></div>
-    </div>
-  `;
 }
