@@ -34,6 +34,13 @@ const updateOrderStatusSchema = z.object({
   status: z.enum(['requested', 'pending', 'preparing', 'completed', 'cancelled']),
 });
 
+// NEW: Schema for updating items within an active order
+const updateOrderItemsSchema = z.object({
+  id: z.string().min(1, "Order ID is required"),
+  items: z.array(orderItemSchema).min(1, "Order must have at least one item"),
+  total_price: z.number().nonnegative("Total price cannot be negative")
+});
+
 // FIXED: Added the optional `items` array so Zod allows us to save cart edits!
 const updateOrderPaymentSchema = z.object({
   id: z.string().min(1, "Order ID is required"),
@@ -340,6 +347,41 @@ export function useUpdateOrderStatus() {
     },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : 'Failed to update status');
+    },
+  });
+}
+
+// NEW: Hook to update just the items of an order via the Edit Order Dialog
+export function useUpdateOrderItems() {
+  const queryClient = useQueryClient();
+  const { cafe } = useCafe();
+  
+  return useMutation({
+    mutationFn: async ({ id, items, total_price }: { id: string; items: OrderItem[]; total_price: number }) => {
+      const validationResult = updateOrderItemsSchema.safeParse({ id, items, total_price });
+      if (!validationResult.success) {
+        throw new Error('Invalid items data');
+      }
+
+      const { data, error } = await supabase
+        .from('orders')
+        .update({ 
+          items: JSON.parse(JSON.stringify(validationResult.data.items)),
+          total_price: validationResult.data.total_price 
+        })
+        .eq('id', validationResult.data.id)
+        .select()
+        .single();
+      
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['orders', cafe?.id] });
+      toast.success('Order updated successfully');
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : 'Failed to update order');
     },
   });
 }

@@ -12,7 +12,8 @@ import {
   Receipt, 
   MessageSquare,
   Share2,
-  AlertCircle
+  AlertCircle,
+  Pencil // ADDED PENCIL ICON
 } from 'lucide-react';
 import { useMenuItems, MenuItem } from '@/hooks/useMenuItems';
 import { useOrders, useCreateOrder, useUpdateOrderStatus, OrderItem, Order } from '@/hooks/useOrders';
@@ -29,6 +30,7 @@ import { DailyInsights } from './DailyInsights';
 import { InstallPrompt } from './InstallPrompt';
 import { BillDialog } from './BillDialog';
 import { CounterOrderDialog } from './CounterOrderDialog';
+import { EditOrderDialog } from './EditOrderDialog';
 
 const categoryIcons: Record<string, React.ElementType> = {
   Drinks: Coffee,
@@ -55,6 +57,9 @@ export function OrderEntry() {
   const [billOrder, setBillOrder] = useState<Order | null>(null);
   const [billDialogOpen, setBillDialogOpen] = useState(false);
   const [counterOrderOpen, setCounterOrderOpen] = useState(false);
+
+  // NEW STATE FOR EDITING EXISTING ORDERS
+  const [editingOrder, setEditingOrder] = useState<Order | null>(null);
 
   // --- CUSTOM PRICING STATES ---
   const [customPricingOpen, setCustomPricingOpen] = useState(false);
@@ -134,7 +139,6 @@ export function OrderEntry() {
         table_number: tempTableNumber.trim() || 'Counter', 
         special_instructions: tempSpecialInstructions.trim() || undefined,
         is_counter_order: true,
-        // Since THIS is a counter order taken by staff, it skips approval and goes straight to pending
         status: 'pending' 
       },
       { onSuccess: () => {
@@ -353,14 +357,25 @@ export function OrderEntry() {
                 </Badge>
               </div>
               <CardContent className="p-4 space-y-4">
-                <div className="bg-[#F7F1F2] p-3 rounded-2xl space-y-2 border border-[#EBE1E3]/50">
-                  {order.items.map((it, idx) => (
-                    <div key={idx} className="flex justify-between items-center">
-                       <p className="text-sm font-bold text-[#3A2C2C]"><span className="text-[#6F4E37] mr-2 text-[15px]">{it.quantity}×</span>{it.name}</p>
-                       <p className="text-sm font-black text-[#6F4E37]">₹{it.price * it.quantity}</p>
-                    </div>
-                  ))}
+                
+                {/* NEW: Edit Order Block */}
+                <div>
+                  <div className="flex items-center justify-between mb-2 px-1">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-[#A89699]">Order Items</span>
+                    <Button variant="ghost" size="sm" className="h-6 px-2.5 rounded-md text-[#6F4E37] bg-[#F9E0E3]/50 hover:bg-[#F9E0E3]" onClick={() => setEditingOrder(order)}>
+                      <Pencil className="w-3 h-3 mr-1.5" /> Edit
+                    </Button>
+                  </div>
+                  <div className="bg-[#F7F1F2] p-3 rounded-2xl space-y-2 border border-[#EBE1E3]/50">
+                    {order.items.map((it, idx) => (
+                      <div key={idx} className="flex justify-between items-center">
+                         <p className="text-sm font-bold text-[#3A2C2C]"><span className="text-[#6F4E37] mr-2 text-[15px]">{it.quantity}×</span>{it.name}</p>
+                         <p className="text-sm font-black text-[#6F4E37]">₹{it.price * it.quantity}</p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
+
                 {order.special_instructions && (
                   <div className="bg-red-50 p-3 rounded-xl text-xs font-bold text-red-700 italic border border-red-100 flex gap-2 items-start">
                     <MessageSquare size={16} className="shrink-0 mt-0.5"/> 
@@ -510,6 +525,13 @@ export function OrderEntry() {
 
       <BillDialog order={billOrder} open={billDialogOpen} onOpenChange={setBillDialogOpen} />
       <CounterOrderDialog open={counterOrderOpen} onOpenChange={setCounterOrderOpen} />
+      
+      {/* NEW: THE EDIT ORDER MODAL */}
+      <EditOrderDialog 
+        order={editingOrder} 
+        open={!!editingOrder} 
+        onOpenChange={(open) => !open && setEditingOrder(null)} 
+      />
     </div>
   );
 }
